@@ -123,6 +123,24 @@
     ]
   },
 
+  "overlays": {
+    "_comment": "Independent on/off overlay toggles, separate from the verse-card state machine above: production keeps these on through many segments (including performances that would otherwise look like NONE to the verse detector - confirmed both stayed on in testdata/none_performance_bianco.png and none_giacca_navy.png). Each is reconciled against its own vMix overlay channel via Merge-style Function=OverlayInputN&Input=<vmix_input>, which TOGGLES that channel - safe here because we always re-read the real state first and only send one toggle when it disagrees, same closed-loop principle as the verse switcher, never a blind command chain. Calibrated on 11 ON examples vs. ONLY ONE OFF example (testdata/off_houston_no_overlays.png) - margins are huge (LIS 0.36 vs 0.03, banner 0.83 vs 0.11) but get more real OFF cases before trusting this as hard as the verse-card thresholds.",
+
+    "lis_box": {
+      "_note": "sign-language interpreter box, bottom-left: solid light-blue backdrop behind the interpreter. ON examples 0.36-0.71, OFF (Houston) 0.03.",
+      "channel": 8, "vmix_input": 16,
+      "kind": "lightblue", "box": [0.0, 0.72, 0.18, 0.26],
+      "h_min": 95, "h_max": 115, "s_min": 80, "v_min": 140,
+      "on": 0.20, "off": 0.12
+    },
+    "lower_third": {
+      "_note": "bottom banner: saturated blue bar + white text panel + gold arc, whatever the text says. ON examples 0.83-0.94, OFF (Houston) 0.11.",
+      "channel": 2, "vmix_input": 19,
+      "kind": "banner", "box": [0.0, 0.85, 1.0, 0.15],
+      "on": 0.50, "off": 0.35
+    }
+  },
+
   "timing": {
     "_comment": "confirm_frames: consecutive agreeing readings before accepting a new state (3 at 8fps = ~375ms). command_cooldown_s: minimum wait between two commands to vMix. resync_warn_after: after how many repeated corrections a warning gets logged.",
     "confirm_frames": 3,

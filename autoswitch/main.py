@@ -4,6 +4,13 @@ The central point of the design is that this is NOT an event generator. On
 every tick it compares the desired state with the ACTUAL state read from
 vMix, and if they diverge, sends the correction. If a command is dropped, the
 next tick resends it. By construction there is no "stuck" state.
+
+Two independent things get reconciled every tick, sharing one vMix state
+read:
+  - the verse-card program input (mutually exclusive states: FULL/LEFT/...);
+  - each configured overlay (lower third, sign-language box - independent
+    on/off toggles, see overlays.py for why they're not part of the
+    verse-card state machine).
 """
 
 from __future__ import annotations
@@ -20,9 +27,10 @@ import cv2
 
 from .capture import ScreenCapture
 from .detect import Debouncer, Detector
+from .overlays import OverlayDetector
 from .paths import base_dir as resolve_base_dir
 from .paths import ensure_config
-from .vmix import VmixClient, VmixError
+from .vmix import VmixClient, VmixError, VmixState
 
 log = logging.getLogger("autoswitch")
 
@@ -74,6 +82,17 @@ class Switcher:
         self.debouncer = Debouncer(int(timing["confirm_frames"]))
         self.vmix = VmixClient(**{k: v for k, v in cfg["vmix"].items() if not k.startswith("_")})
 
+        self.overlay_detector = OverlayDetector(cfg.get("overlays", {}))
+        self.overlay_probes = self.overlay_detector.probes
+        self.overlay_debouncers = {
+            name: Debouncer(int(timing["confirm_frames"]), initial="OFF")
+            for name in self.overlay_probes
+        }
+        self._overlay_last_command: dict[str, float] = {name: 0.0 for name in self.overlay_probes}
+        self._overlay_last_logged: dict[str, str | None] = {name: None for name in self.overlay_probes}
+        self._overlay_corrections: dict[str, int] = {name: 0 for name in self.overlay_probes}
+        self._overlay_seeded = False
+
         self.period = 1.0 / float(cfg["capture"].get("fps", 8))
         self._last_command = 0.0
         self._corrections = 0
@@ -108,24 +127,26 @@ class Switcher:
             except OSError:
                 pass
 
-    # --------------------------------------------------------------- reconcile
-
-    def reconcile(self, desired: str) -> None:
-        target = self.states.get(desired)
-        if target is None:
-            log.error("state %s is not mapped in config.states", desired)
-            return
-
+    def _get_vmix_state(self) -> VmixState | None:
         try:
             vstate = self.vmix.state()
         except VmixError as exc:
             if self._vmix_down_since is None:
                 self._vmix_down_since = time.time()
                 log.error("vMix unreachable (%s). Retrying every tick.", exc)
-            return
+            return None
         if self._vmix_down_since is not None:
             log.info("vMix reachable again after %.1fs", time.time() - self._vmix_down_since)
             self._vmix_down_since = None
+        return vstate
+
+    # --------------------------------------------------------------- reconcile
+
+    def reconcile(self, desired: str, vstate: VmixState) -> None:
+        target = self.states.get(desired)
+        if target is None:
+            log.error("state %s is not mapped in config.states", desired)
+            return
 
         active = vstate.active
 
@@ -177,18 +198,76 @@ class Switcher:
                 return
         self._last_command = now
 
+    def reconcile_overlays(self, desired: dict[str, str], vstate: VmixState) -> None:
+        for name, want in desired.items():
+            probe = self.overlay_probes[name]
+            channel, vmix_input = int(probe["channel"]), int(probe["vmix_input"])
+            actual_raw = vstate.overlays.get(channel)
+            actual_on = actual_raw is not None and str(actual_raw).lstrip("-").isdigit() and int(actual_raw) == vmix_input
+            want_on = want == "ON"
+            if actual_on == want_on:
+                self._overlay_corrections[name] = 0
+                continue
+
+            now = time.time()
+            if now - self._overlay_last_command.get(name, 0.0) < self.cooldown:
+                continue
+
+            self._overlay_corrections[name] += 1
+            if self._overlay_corrections[name] == self.warn_after:
+                log.warning(
+                    "overlay %s (channel %s) requested %s times but stays %s. Check the vMix overlay state.",
+                    name, channel, self._overlay_corrections[name], "ON" if actual_on else "OFF",
+                )
+            log.info(
+                "OverlayInput%s -> %s input %s (%s)   [overlay was %s]",
+                channel, want, vmix_input, name, "ON" if actual_on else "OFF",
+            )
+            if not self.dry_run:
+                try:
+                    self.vmix.call(f"OverlayInput{channel}", Input=vmix_input)
+                except VmixError as exc:
+                    log.error("%s", exc)
+                    continue
+            self._overlay_last_command[name] = now
+
+    def _seed_overlay_debouncers(self, vstate: VmixState) -> None:
+        """Start each overlay's debounced state from what vMix ACTUALLY shows
+        right now, not from a hardcoded guess. Without this, an overlay that
+        is already correctly on at startup gets toggled off for the first
+        confirm_frames ticks (debouncer defaults to "OFF") and then toggled
+        back on once it catches up - a real, observed bug (test_integration.py
+        scenario 10) caused by treating an assumption as truth instead of
+        checking vMix first, the same class of mistake this whole project
+        exists to eliminate."""
+        for name, probe in self.overlay_probes.items():
+            channel, vmix_input = int(probe["channel"]), int(probe["vmix_input"])
+            actual_raw = vstate.overlays.get(channel)
+            actual_on = actual_raw is not None and str(actual_raw).lstrip("-").isdigit() and int(actual_raw) == vmix_input
+            state = "ON" if actual_on else "OFF"
+            db = self.overlay_debouncers[name]
+            db.stable = db._candidate = state
+            db._count = 0
+        self._overlay_seeded = True
+
     # -------------------------------------------------------------------- loop
 
     def run(self) -> None:
         log.info(
-            "starting  |  capture %sx%s  |  states: %s  |  %s",
+            "starting  |  capture %sx%s  |  states: %s  |  overlays: %s  |  %s",
             *self.capture.source_size,
             self.states,
+            list(self.overlay_probes),
             "DRY-RUN (no commands to vMix)" if self.dry_run else "live",
         )
         while self.running:
             tick = time.time()
             frame = self.capture.grab()
+
+            vstate = self._get_vmix_state()
+            if vstate is not None and not self._overlay_seeded:
+                self._seed_overlay_debouncers(vstate)
+
             reading = self.detector.read(frame)
             desired = self.debouncer.update(reading.state)
 
@@ -198,7 +277,22 @@ class Switcher:
                 self._dump_frame(frame, desired)
                 self._last_logged_state = desired
 
-            self.reconcile(desired)
+            overlay_reading = self.overlay_detector.read(frame)
+            overlay_desired: dict[str, str] = {}
+            for name, hot in overlay_reading.hot.items():
+                raw = "ON" if hot else "OFF"
+                stable = self.overlay_debouncers[name].update(raw)
+                overlay_desired[name] = stable
+                if stable != self._overlay_last_logged[name]:
+                    log.info(
+                        "OVERLAY %s: %s -> %s   (%s=%.4f)",
+                        name, self._overlay_last_logged[name], stable, name, overlay_reading.metrics[name],
+                    )
+                    self._overlay_last_logged[name] = stable
+
+            if vstate is not None:
+                self.reconcile(desired, vstate)
+                self.reconcile_overlays(overlay_desired, vstate)
 
             sleep = self.period - (time.time() - tick)
             if sleep > 0:

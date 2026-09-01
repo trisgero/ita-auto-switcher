@@ -105,6 +105,47 @@ Four details that remove false positives:
 - **Hysteresis** (a lower exit threshold than the entry one) and **debounce**
   (3 agreeing readings, ~375 ms) before accepting a change.
 
+## Independent overlays: lower third and sign-language box
+
+Separate from the verse-card state machine above: the lower third (blue bar
++ gold arc banner, whatever text it holds) and the sign-language interpreter
+box (bottom-left) are toggled independently through vMix's `OverlayInputN`
+API, in `autoswitch/overlays.py` and reconciled every tick in `main.py`
+alongside the verse-card program input, sharing one vMix state read per tick.
+
+They're **not** part of the verse-card rules on purpose: production keeps
+both on through many different segments — including performances that the
+verse detector correctly reads as `NONE` (confirmed on real footage: both
+overlays measured ON during the two false-positive performance frames in
+`testdata/`). Trying to fold them into the same state machine would have
+coupled two unrelated things.
+
+The signal is much stronger than the verse-card probes, because the question
+is binary presence/absence of a flat-color graphic against a busy
+photographic image, not "which of several similar cards is this":
+
+| probe | worst ON example | OFF example |
+|---|---|---|
+| `lis_box` (light-blue backdrop behind the interpreter) | 0.36 | 0.03 |
+| `lower_third` (saturated blue + white + gold) | 0.83 | 0.11 |
+
+**Only one real OFF example exists so far** (`testdata_overlays/houston_off.png`).
+The margins above are wide enough to trust provisionally, but — same lesson
+as everywhere else in this project — get more real OFF cases (different
+events, different lighting) before trusting them the way the verse-card
+thresholds are trusted after a dozen real examples. Add new cases straight
+into `testdata_overlays/` and a case in `test_overlays.py`.
+
+Toggling is safe with a plain toggle command (rather than an explicit on/off
+call) only because the reconciliation loop always re-reads vMix's real
+overlay state first and sends exactly one toggle when it disagrees with the
+desired state — never a blind command chain. The one real bug this surfaced
+during testing: on startup, each overlay's debounced state defaulted to
+`"OFF"` regardless of what vMix actually showed, which briefly toggled an
+already-correct ON overlay off and back on again. Fixed by seeding the
+debouncer from vMix's real state on the first tick instead of guessing (see
+`Switcher._seed_overlay_debouncers` and scenario 10 in `test_integration.py`).
+
 ## Prerequisites
 
 In vMix: **Settings → Web Controller enabled**, port 8088. That's the
@@ -268,16 +309,18 @@ others.
 | `autoswitch/capture.py` | screen capture (mss) and resizing |
 | `autoswitch/detect.py` | ROI metrics, hysteresis, rules, debounce |
 | `autoswitch/vmix.py` | vMix API client (state reading + commands) |
-| `autoswitch/main.py` | reconciliation loop (CLI, for development) |
+| `autoswitch/main.py` | reconciliation loop for both the program input and the overlays (CLI, for development) |
+| `autoswitch/overlays.py` | independent lower-third / sign-language-box on/off detectors |
 | `autoswitch/paths.py` | folder resolution, correct from a packaged .exe too |
 | `autoswitch/wizard.py` | guided monitor selection, vMix check |
 | `autoswitch/regression.py` | case discovery, test execution, threshold computation — used by both `test_detection.py` and the GUI |
 | `autoswitch/gui.py` | the GUI: templates, screenshots, inputs, verify, recalibrate |
 | `app.py` | entry point: opens the GUI (or the old console menu with `--console`) |
 | `calibrate.py` | manual ROI drawing, live viewer with the probes drawn on top |
-| `test_detection.py` | detection regression tests (command line) |
-| `test_integration.py` | full loop against a fake vMix |
-| `test.bat` | runs both suites |
+| `test_detection.py` | verse-card regression tests (command line) |
+| `test_overlays.py` | lower-third / sign-language-box regression tests |
+| `test_integration.py` | full loop (program input + overlays) against a fake vMix |
+| `test.bat` | runs all three suites |
 | `gui.bat` | opens the GUI from source |
 | `dryrun.bat` / `run.bat` | dry-run / live from the command line (no GUI) |
 | `calib.bat` | low-level calibration viewer (accepts `calibrate.py`'s flags) |

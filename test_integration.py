@@ -40,13 +40,22 @@ def check(label: str, got, expected) -> None:
 # --------------------------------------------------------------- fake vMix
 
 class MockVmix:
-    """Reproduces vMix's /api: readable state + Function=Merge that changes it."""
+    """Reproduces vMix's /api: readable state + Function=Merge that changes
+    it + Function=OverlayInputN that TOGGLES overlay channel N (matching
+    real vMix semantics, per the shortcut template's existing Down/S keys)."""
 
-    def __init__(self, active: int = 2, drop_first: int = 0):
+    def __init__(self, active: int = 2, drop_first: int = 0,
+                 overlays: dict[int, int | None] | None = None,
+                 drop_overlay_first: int = 0):
         self.active = active
-        self.drop_first = drop_first  # how many commands to "drop"
+        self.drop_first = drop_first  # how many Merge commands to "drop"
         self.received: list[int] = []
         self.applied: list[int] = []
+
+        self.overlays: dict[int, int | None] = dict(overlays or {})
+        self.drop_overlay_first = drop_overlay_first
+        self.overlay_received: list[tuple[int, int]] = []
+        self.overlay_applied: list[tuple[int, int]] = []
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -55,7 +64,8 @@ class MockVmix:
 
             def do_GET(self):
                 q = parse_qs(urlparse(self.path).query)
-                if q.get("Function", [""])[0] == "Merge":
+                func = q.get("Function", [""])[0]
+                if func == "Merge":
                     number = int(q["Input"][0])
                     outer.received.append(number)
                     if outer.drop_first > 0:
@@ -63,12 +73,28 @@ class MockVmix:
                     else:
                         outer.active = number
                         outer.applied.append(number)
-                body = f"""<vmix><inputs>
-                    <input key="k2" number="2" title="APALIT ZOOM FEED"/>
-                    <input key="k3" number="3" title="RL VERSES"/>
-                    <input key="k8" number="8" title="LEFT"/>
-                    <input key="k41" number="41" title="OTHER"/>
-                  </inputs><overlays/><preview>0</preview>
+                elif func.startswith("OverlayInput"):
+                    channel = int(func[len("OverlayInput"):])
+                    number = int(q["Input"][0])
+                    outer.overlay_received.append((channel, number))
+                    if outer.drop_overlay_first > 0:
+                        outer.drop_overlay_first -= 1
+                    else:
+                        # real vMix toggles: same input already showing -> OFF
+                        current = outer.overlays.get(channel)
+                        outer.overlays[channel] = None if current == number else number
+                        outer.overlay_applied.append((channel, number))
+
+                overlay_xml = "".join(
+                    f'<overlay number="{ch}">k{inp}</overlay>'
+                    for ch, inp in outer.overlays.items() if inp is not None
+                )
+                input_keys = {2, 3, 8, 41, 16, 19}
+                inputs_xml = "".join(
+                    f'<input key="k{n}" number="{n}" title="INPUT{n}"/>' for n in input_keys
+                )
+                body = f"""<vmix><inputs>{inputs_xml}
+                  </inputs><overlays>{overlay_xml}</overlays><preview>0</preview>
                   <active>{outer.active}</active></vmix>""".encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/xml")
@@ -119,9 +145,11 @@ def camera_frame(width: int):
     return cv2.resize(crop, (width, int(round(width * 1080 / 1920))), interpolation=cv2.INTER_LINEAR)
 
 
-def run(frames, active_start=2, drop_first=0, managed_override=None):
+def run(frames, active_start=2, drop_first=0, managed_override=None,
+        overlays_start=None, drop_overlay_first=0):
     cfg = json.load(open(os.path.join(BASE, "config.json"), encoding="utf-8"))
-    mock = MockVmix(active=active_start, drop_first=drop_first)
+    mock = MockVmix(active=active_start, drop_first=drop_first,
+                     overlays=overlays_start, drop_overlay_first=drop_overlay_first)
     cfg["vmix"]["url"] = f"http://127.0.0.1:{mock.port}/api"
     cfg["capture"]["fps"] = 1000          # no waiting in tests
     cfg["timing"]["command_cooldown_s"] = 0
@@ -140,6 +168,15 @@ def run(frames, active_start=2, drop_first=0, managed_override=None):
 logging.disable(logging.INFO)  # the loop logs a lot; here only the outcome matters
 W = json.load(open(os.path.join(BASE, "config.json"), encoding="utf-8"))["capture"]["work_width"]
 FULL, LEFT, CAM = load("full", W), load("left", W), camera_frame(W)
+
+
+def overlay_off_frame(width: int):
+    img = cv2.imread(os.path.join(BASE, "testdata_overlays", "houston_off.png"))
+    return cv2.resize(img, (width, int(round(img.shape[0] * width / img.shape[1]))),
+                      interpolation=cv2.INTER_AREA)
+
+
+OVERLAYS_OFF = overlay_off_frame(W)
 
 print("\n1. the source drives it: NONE -> FULL -> NONE -> LEFT -> NONE")
 sw, mock = run([CAM] * 5 + [FULL] * 8 + [CAM] * 8 + [LEFT] * 8 + [CAM] * 8)
@@ -171,6 +208,27 @@ check("program left where it was", mock.active, 41)
 print("\n6. hands-off, then the source changes -> the automation resumes")
 sw, mock = run([CAM] * 6 + [FULL] * 10, active_start=41)
 check("resumes and goes to 3", mock.active, 3)
+
+print("\n7. overlays start OFF, source shows both ON (real FULL frame) -> both get toggled on")
+sw, mock = run([FULL] * 10, overlays_start={2: None, 8: None})
+check("lower_third turned on (channel 2 -> input 19)", mock.overlays.get(2), 19)
+check("lis_box turned on (channel 8 -> input 16)", mock.overlays.get(8), 16)
+
+print("\n8. overlays start ON, source shows neither (real Houston frame) -> both get toggled off")
+sw, mock = run([OVERLAYS_OFF] * 10, overlays_start={2: 19, 8: 16})
+check("lower_third turned off", mock.overlays.get(2), None)
+check("lis_box turned off", mock.overlays.get(8), None)
+
+print("\n9. DROPPED overlay command: recovers same as the historical Merge bug")
+sw, mock = run([FULL] * 15, overlays_start={2: None, 8: None}, drop_overlay_first=3)
+check("lower_third eventually turned on despite 3 dropped toggles", mock.overlays.get(2), 19)
+check("lis_box eventually turned on despite 3 dropped toggles", mock.overlays.get(8), 16)
+print(f"         overlay toggles sent: {len(mock.overlay_received)}, applied: {mock.overlay_applied}")
+
+print("\n10. overlays are independent of the verse-card state: FULL -> nothing (verse-only content) "
+      "must NOT flip overlays that are already correctly on")
+sw, mock = run([FULL] * 10, overlays_start={2: 19, 8: 16})
+check("overlay toggle commands sent (should be none, already correct)", mock.overlay_received, [])
 
 print("\n" + ("ALL OK" if not failures else f"FAILED: {len(failures)} -> {failures}"))
 sys.exit(1 if failures else 0)
