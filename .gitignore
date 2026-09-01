@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# PyInstaller build output — rebuild with build.bat, don't commit the binary
+build/
+dist/
+*.spec
+
+# Runtime folders created by the app itself (config seeding, logs, monitor
+# previews) — not source, regenerated on first run of the exe
+logs/
+monitor_previews/
+config.json.bak_*
+
+# Distribution packages — build these locally with build.bat, distribute via
+# a Release or a separate share, don't commit multi-megabyte binaries here
+distribute/
+*.zip

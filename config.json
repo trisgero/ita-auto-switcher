@@ -1,0 +1,138 @@
+{
+  "_comment": "ROIs normalized [x, y, w, h] over 0..1. Values here are TUNED on the real screenshots in __screenshots (full/left/dual). Verify with: python calibrate.py --image <file>",
+
+  "capture": {
+    "_comment": "monitor: 1 = primary, 2 = secondary... (mss numbering, see calibrate.py --monitors). region optional in pixels [x, y, w, h] within the monitor, if Zoom has black bars.",
+    "monitor": 2,
+    "region": null,
+    "fps": 8,
+    "work_width": 480
+  },
+
+  "vmix": {
+    "url": "http://127.0.0.1:8088/api",
+    "timeout": 1.0
+  },
+
+  "states": {
+    "_comment": "Detected state -> vMix input sent to program with Merge. DUAL/TRIPLE deliberately stay on 2 until they have a dedicated input in the preset: they are recognized and logged, but the Zoom feed stays on screen. Candidates for later: DUAL -> 29, TRIPLE -> 30. When you wire them up, change the number here AND add it to managed_inputs.",
+    "NONE": 2,
+    "FULL": 3,
+    "LEFT": 8,
+    "RIGHT": 9,
+    "BIG_LEFT": 49,
+    "DUAL": 2,
+    "TRIPLE": 2
+  },
+
+  "_managed_comment": "Inputs the automation is allowed to command. If the program ends up on an input OUTSIDE this list, it goes hands-off and stops correcting: that's how it avoids fighting the operator. 49 = '3 BRO VERSE L', has no keyboard shortcut in the current template.",
+  "managed_inputs": [2, 3, 8, 9, 49],
+
+  "detector": {
+    "blur": 5,
+
+    "rois": {
+      "_comment": "metric 'navy' = fraction of pixels matching the card's color (H 100-130, S>=150, V<=110) - dark AND saturated blue, nothing else. s_min=150 excludes a dark blue jacket in a camera shot (S~106, darker than the card but above a low s_min) that used to trigger false BIG_LEFT/LEFT (testdata/none_giacca_navy.png). A previous version also counted bright/desaturated pixels as 'card' to tolerate long verse text, but that let a performer's white/cream outfit or a white set piece get misread as a verse card (testdata/none_performance_bianco.png) - removed once we confirmed pure navy, with today's thresholds, already covers every known case including long verses (see each ROI's _note below).",
+
+      "card_left": {
+        "_note": "is there a card on the left?  full=0.56 left=0.79 big_left=0.80 dual=0.80 triple=0.49 dual_verso_lungo=0.68  |  camera=0.15 navy_jacket=0.29 performance(white_outfit)=0.00",
+        "metric": "navy", "box": [0.12, 0.36, 0.40, 0.24],
+        "h_min": 100, "h_max": 130, "s_min": 150, "v_max": 110,
+        "on": 0.40, "off": 0.20
+      },
+      "col_right": {
+        "_note": "narrow strip at the card's right edge: where it ends in LEFT and where it continues in BIG_LEFT.  full=0.52 left=0.08 big_left=0.99 dual=1.00 triple=0.85 dual_verso_lungo=0.62  |  camera=0.34 navy_jacket=0.38",
+        "metric": "navy", "box": [0.635, 0.32, 0.05, 0.24],
+        "h_min": 100, "h_max": 130, "s_min": 150, "v_max": 110,
+        "on": 0.55, "off": 0.40
+      },
+      "far_right": {
+        "_note": "right-hand band: card in full/dual, cameras in left/big_left.  full=0.66 left=0.01 big_left=0.01 dual=0.98 triple=0.51 dual_verso_lungo=0.64  |  camera=0.14 navy_jacket=0.34",
+        "metric": "navy", "box": [0.75, 0.32, 0.18, 0.24],
+        "h_min": 100, "h_max": 130, "s_min": 150, "v_max": 110,
+        "on": 0.55, "off": 0.45
+      },
+      "low_left": {
+        "_note": "the card reaches the bottom on the left: full only.  full=0.95 left=0.00 big_left=0.29 dual=0.00 triple=0.01  |  camera=0.06 navy_jacket=0.00",
+        "metric": "navy", "box": [0.15, 0.70, 0.15, 0.08],
+        "h_min": 100, "h_max": 130, "s_min": 150, "v_max": 110,
+        "on": 0.70, "off": 0.50
+      },
+      "low_right": {
+        "_note": "the card reaches the bottom on the right: full only.  full=1.00 left=0.04 big_left=0.27 dual=0.00 triple=0.00  |  camera=0.05 navy_jacket=0.00",
+        "metric": "navy", "box": [0.80, 0.70, 0.14, 0.08],
+        "h_min": 100, "h_max": 130, "s_min": 150, "v_max": 110,
+        "on": 0.70, "off": 0.45
+      },
+      "center_low": {
+        "_note": "center card at the bottom: the third one in TRIPLE.  full=0.88 left=0.00 big_left=0.00 dual=0.00 triple=0.63  |  camera=0.19 navy_jacket=0.00",
+        "metric": "navy", "box": [0.42, 0.76, 0.16, 0.06],
+        "h_min": 100, "h_max": 130, "s_min": 150, "v_max": 110,
+        "on": 0.45, "off": 0.28
+      }
+    },
+
+    "template_gate": {
+      "_comment": "Optional. Compares a background-only band against a saved reference (python calibrate.py --save-ref) to rule out a camera being on screen instead of the graphic. The ROIs above are already discriminating enough: only enable this if you see false positives.",
+      "enabled": false,
+      "box": [0.00, 0.02, 1.00, 0.12],
+      "reference": "ref_bg.png",
+      "max_diff": 12.0
+    },
+
+    "_rules_comment": "Evaluated IN ORDER, the first match wins. If none match -> NONE -> input 2: exiting NONE requires positive evidence, and that's what guarantees the fallback to the Zoom feed once the verse disappears. NOTE: across the 5 measured layouts every rule is MUTUALLY EXCLUSIVE - each one matches only one rule - so the order is not load-bearing. If you add rules, re-check this with test_detection.py.",
+
+    "rules": [
+      {
+        "state": "FULL",
+        "_note": "full-page card: the panel reaches the bottom on both sides",
+        "hot": ["low_left", "low_right"],
+        "cold": []
+      },
+      {
+        "state": "TRIPLE",
+        "_note": "two cards on top + one centered at the bottom",
+        "hot": ["center_low", "card_left"],
+        "cold": ["low_left", "low_right"]
+      },
+      {
+        "state": "DUAL",
+        "_note": "two cards side by side, neither reaches the bottom, the right one is wide",
+        "hot": ["card_left", "far_right"],
+        "cold": ["low_left", "low_right", "center_low"]
+      },
+      {
+        "state": "BIG_LEFT",
+        "_note": "wide card on the left + 3 narrow cameras on the right: the card extends past x=0.635 but doesn't reach the far_right band",
+        "hot": ["card_left", "col_right"],
+        "cold": ["far_right", "low_left", "low_right", "center_low"]
+      },
+      {
+        "state": "LEFT",
+        "_note": "card on the left ending before x=0.635, 2 cameras on the right",
+        "hot": ["card_left"],
+        "cold": ["col_right", "low_left", "low_right"]
+      },
+      {
+        "state": "RIGHT",
+        "_note": "NOT VERIFIED: no screenshot available yet. Mirrors LEFT. Enable only after checking the numbers with calibrate.py --image right.png",
+        "enabled": false,
+        "hot": ["far_right"],
+        "cold": ["card_left", "low_left", "low_right"]
+      }
+    ]
+  },
+
+  "timing": {
+    "_comment": "confirm_frames: consecutive agreeing readings before accepting a new state (3 at 8fps = ~375ms). command_cooldown_s: minimum wait between two commands to vMix. resync_warn_after: after how many repeated corrections a warning gets logged.",
+    "confirm_frames": 3,
+    "command_cooldown_s": 0.7,
+    "resync_warn_after": 5
+  },
+
+  "logging": {
+    "save_transition_frames": true,
+    "frames_dir": "logs/frames",
+    "max_saved_frames": 500
+  }
+}

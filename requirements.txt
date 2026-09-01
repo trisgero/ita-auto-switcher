@@ -1,0 +1,4 @@
+mss>=9.0.1
+numpy>=1.26
+opencv-python>=4.10
+requests>=2.31
