@@ -21,6 +21,7 @@ from .main import Switcher, load_config, setup_logging
 from .paths import base_dir as resolve_base_dir
 from .paths import bundle_dir as resolve_bundle_dir
 from .paths import ensure_config
+from .version import version_label
 from .regression import (
     ThresholdSuggestion,
     discover_cases,
@@ -117,6 +118,11 @@ class App(tk.Tk):
         self.run_btn_stop.pack(side="right")
         self.run_btn_live.pack(side="right", padx=(0, 6))
         self.run_btn_test.pack(side="right", padx=(0, 6))
+
+        version_row = ttk.Frame(self, padding=(8, 0, 8, 4))
+        version_row.pack(side="top", fill="x")
+        ttk.Label(version_row, text=f"Build: {version_label()}", font=("Segoe UI", 8),
+                 foreground="#888").pack(side="left")
 
         body = ttk.PanedWindow(self, orient="horizontal")
         body.pack(side="top", fill="both", expand=True, padx=8, pady=(0, 8))
