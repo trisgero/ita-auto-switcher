@@ -134,10 +134,10 @@
       "on": 0.15, "off": 0.08
     },
     "lower_third": {
-      "_note": "bottom banner: saturated blue bar + white text panel + gold arc, whatever the text says. ON examples 0.83-0.94, OFF (Houston) 0.11.",
+      "_note": "bottom banner: the saturated blue bar alone, whatever the text says. The white-text and gold-arc components were dropped: gold (H15-35, high S) is exactly a sunset's hue range, and a real song-title frame with no banner measured 0.84 on gold alone - see testdata_overlays/sunset_no_banner.png and sunset_with_banner.png. Blue-only: worst real ON=0.50, worst OFF/false=0.05.",
       "channel": 2, "vmix_input": 19,
       "kind": "banner", "box": [0.0, 0.85, 1.0, 0.15],
-      "on": 0.50, "off": 0.35
+      "on": 0.35, "off": 0.20
     }
   },
 

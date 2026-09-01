@@ -71,6 +71,11 @@ CASES = [
     # saturated blue corner reached into the lis_box ROI and got misread as
     # the interpreter box, even though only the lower third was on screen.
     (os.path.join(TESTDATA_OVERLAYS, "false_positive_lower_third_only.png"), False, True),
+    # Same song-title segment, ~2.5 minutes apart: a golden sunset background
+    # used to read as lower_third=True purely from its hue (see overlays.py's
+    # "banner" kind comment) - fixed by dropping the gold-arc component.
+    (os.path.join(TESTDATA_OVERLAYS, "sunset_with_banner.png"), False, True),
+    (os.path.join(TESTDATA_OVERLAYS, "sunset_no_banner.png"), False, False),
 ]
 
 print("\n1. both overlay probes on real frames")

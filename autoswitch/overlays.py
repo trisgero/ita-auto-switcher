@@ -63,11 +63,16 @@ class OverlayDetector:
                 & (v >= probe.get("v_min", 140))
             )
         elif kind == "banner":
-            # Lower third: saturated blue bar + white text/panel + gold arc.
-            blue = (h >= 100) & (h <= 130) & (s >= 100)
-            white = (v >= 230) & (s <= 30)
-            gold = (h >= 15) & (h <= 35) & (s >= 120)
-            mask = blue | white | gold
+            # Lower third: the saturated blue bar alone. An earlier version
+            # also OR'd in "white text" and "gold arc" ranges, but gold
+            # (H15-35, high saturation) is exactly the hue of a sunset -
+            # a real song-title frame with no banner at all measured 0.84
+            # gold-only, a bigger false positive than any real banner's true
+            # reading (see testdata_overlays/sunset_no_banner.png). Blue
+            # alone has a huge margin on its own (worst real ON 0.50 vs
+            # worst false 0.05) and doesn't share a color family with
+            # anything a sunset, skin tone, or wood surface can produce.
+            mask = (h >= 100) & (h <= 130) & (s >= 100)
         else:
             raise ValueError(f"unknown overlay probe kind: {kind!r}")
 
