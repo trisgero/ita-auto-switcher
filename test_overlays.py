@@ -76,6 +76,12 @@ CASES = [
     # "banner" kind comment) - fixed by dropping the gold-arc component.
     (os.path.join(TESTDATA_OVERLAYS, "sunset_with_banner.png"), False, True),
     (os.path.join(TESTDATA_OVERLAYS, "sunset_no_banner.png"), False, False),
+    # Two more false positives from the same evening, both fixed by requiring
+    # blue AND white together instead of blue alone: a wide venue shot (stage
+    # lighting reads as "saturated blue") and a plain sky background. Both
+    # genuinely have the interpreter box visible, hence lis_box=True.
+    (os.path.join(TESTDATA_OVERLAYS, "venue_wide_shot.png"), True, False),
+    (os.path.join(TESTDATA_OVERLAYS, "sky_no_banner.png"), True, False),
 ]
 
 print("\n1. both overlay probes on real frames")
