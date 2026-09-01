@@ -124,14 +124,14 @@
   },
 
   "overlays": {
-    "_comment": "Independent on/off overlay toggles, separate from the verse-card state machine above: production keeps these on through many segments (including performances that would otherwise look like NONE to the verse detector - confirmed both stayed on in testdata/none_performance_bianco.png and none_giacca_navy.png). Each is reconciled against its own vMix overlay channel via Merge-style Function=OverlayInputN&Input=<vmix_input>, which TOGGLES that channel - safe here because we always re-read the real state first and only send one toggle when it disagrees, same closed-loop principle as the verse switcher, never a blind command chain. Calibrated on 11 ON examples vs. ONLY ONE OFF example (testdata/off_houston_no_overlays.png) - margins are huge (LIS 0.36 vs 0.03, banner 0.83 vs 0.11) but get more real OFF cases before trusting this as hard as the verse-card thresholds.",
+    "_comment": "Independent on/off overlay toggles, separate from the verse-card state machine above: production keeps the lower third on through many segments unrelated to a verse (confirmed still on during a real performance frame, testdata/none_giacca_navy.png). Each is reconciled against its own vMix overlay channel via Merge-style Function=OverlayInputN&Input=<vmix_input>, which TOGGLES that channel - safe here because we always re-read the real state first and only send one toggle when it disagrees, same closed-loop principle as the verse switcher, never a blind command chain. Get more real OFF cases before trusting this as hard as the verse-card thresholds - each probe has had exactly one real false positive found and fixed so far (see each probe's _note).",
 
     "lis_box": {
-      "_note": "sign-language interpreter box, bottom-left: solid light-blue backdrop behind the interpreter. ON examples 0.36-0.71, OFF (Houston) 0.03.",
+      "_note": "sign-language interpreter box, bottom-left: solid light-blue backdrop behind the interpreter. h_min/h_max/s_min alone weren't enough: a lower-third banner variant whose saturated blue corner reaches into this screen position was misread as the box (S~208-234 vs the real backdrop's S~128) - see testdata_overlays/false_positive_lower_third_only.png. s_max fixes it. Also corrected two mislabeled test cases that never actually had the box visible (testdata/left_verso_testo_canzone.png, testdata/none_performance_bianco.png - checked visually, no interpreter box in either). With s_max=190: worst real ON=0.30, worst OFF/false=0.02.",
       "channel": 8, "vmix_input": 16,
       "kind": "lightblue", "box": [0.0, 0.72, 0.18, 0.26],
-      "h_min": 95, "h_max": 115, "s_min": 80, "v_min": 140,
-      "on": 0.20, "off": 0.12
+      "h_min": 95, "h_max": 115, "s_min": 80, "s_max": 190, "v_min": 140,
+      "on": 0.15, "off": 0.08
     },
     "lower_third": {
       "_note": "bottom banner: saturated blue bar + white text panel + gold arc, whatever the text says. ON examples 0.83-0.94, OFF (Houston) 0.11.",

@@ -60,10 +60,17 @@ CASES = [
     (os.path.join(TESTDATA, "dual_verso_lungo.png"), True, True),
     (os.path.join(TESTDATA, "full_std_bordo.png"), True, True),
     (os.path.join(TESTDATA, "left_output_italiano.png"), True, True),
-    (os.path.join(TESTDATA, "left_verso_testo_canzone.png"), True, True),
+    # These two were originally (wrongly) marked lis_box=True without
+    # actually checking the image - neither has the interpreter box visible
+    # at all, just the verse card + lyrics + lower third. Confirmed visually.
+    (os.path.join(TESTDATA, "left_verso_testo_canzone.png"), False, True),
+    (os.path.join(TESTDATA, "none_performance_bianco.png"), False, True),
     (os.path.join(TESTDATA, "none_giacca_navy.png"), True, True),
-    (os.path.join(TESTDATA, "none_performance_bianco.png"), True, True),
     (os.path.join(TESTDATA_OVERLAYS, "houston_off.png"), False, False),
+    # Real false positive from the field: a lower-third banner variant whose
+    # saturated blue corner reached into the lis_box ROI and got misread as
+    # the interpreter box, even though only the lower third was on screen.
+    (os.path.join(TESTDATA_OVERLAYS, "false_positive_lower_third_only.png"), False, True),
 ]
 
 print("\n1. both overlay probes on real frames")

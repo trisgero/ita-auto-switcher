@@ -50,10 +50,17 @@ class OverlayDetector:
         kind = probe.get("kind", "lightblue")
 
         if kind == "lightblue":
-            # LIS box: solid light-blue backdrop behind the interpreter.
+            # LIS box: solid light-blue backdrop behind the interpreter. The
+            # upper bound on saturation matters as much as the lower one: the
+            # backdrop is a soft studio blue (S~128), clearly less vivid than
+            # the lower third's punchy graphic blue (S~208-234) - without
+            # s_max, a lower-third banner variant whose blue corner reaches
+            # into this ROI's screen position gets misread as the interpreter
+            # box (see testdata_overlays/false_positive_lower_third_only.png).
             mask = (
                 (h >= probe.get("h_min", 95)) & (h <= probe.get("h_max", 115))
-                & (s >= probe.get("s_min", 80)) & (v >= probe.get("v_min", 140))
+                & (s >= probe.get("s_min", 80)) & (s <= probe.get("s_max", 255))
+                & (v >= probe.get("v_min", 140))
             )
         elif kind == "banner":
             # Lower third: saturated blue bar + white text/panel + gold arc.
