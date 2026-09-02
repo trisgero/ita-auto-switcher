@@ -85,8 +85,8 @@
     "rules": [
       {
         "state": "FULL",
-        "_note": "full-page card: the panel reaches the bottom on both sides",
-        "hot": ["low_left", "low_right"],
+        "_note": "full-page card: the panel reaches the bottom on both sides AND the main card body is present. card_left is required here too, not just low_left/low_right - a wide congregation/venue shot with blue stage drapery flanking both bottom corners can hit low_left/low_right on its own (card_left=0.0) and get misread as FULL for several seconds, real bug found in the field: testdata/none_venue_wide_nueva_ecija.png (low_left=0.735 low_right=0.944 card_left=0.000). Every real FULL frame has card_left >= 0.49 (see module docstring), so this costs no margin on true cases.",
+        "hot": ["low_left", "low_right", "card_left"],
         "cold": []
       },
       {
