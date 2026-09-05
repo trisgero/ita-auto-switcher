@@ -21,6 +21,11 @@ no_overlays.png):
 Only one OFF example exists so far - get more real cases before trusting the
 thresholds blindly the way earlier probes in this project were trusted on
 too little data.
+
+One exception to "independent": a probe can declare "suppressed_by": [other
+probe names] in config.json - by production rule, not because the two are
+hard to tell apart at the pixel level (centered_lower_third must never be
+commanded on while lower_third is). See OverlayDetector.read().
 """
 
 from __future__ import annotations
@@ -105,7 +110,21 @@ class OverlayDetector:
                 self._hot[name] = value >= float(probe["off"])
             else:
                 self._hot[name] = value >= float(probe["on"])
-        return OverlayReading(hot=dict(self._hot), metrics=metrics)
+
+        # Some overlays take priority over others regardless of their own
+        # pixel reading (config's "suppressed_by": [other probe names]) -
+        # e.g. centered_lower_third is suppressed whenever lower_third is on,
+        # by production rule, not because the two would be hard to tell
+        # apart. Applied to a COPY, not self._hot: the suppressed probe's own
+        # hysteresis keeps tracking its real signal underneath, so it comes
+        # back the instant the suppressing overlay goes off, without having
+        # to re-cross its "on" threshold.
+        hot = dict(self._hot)
+        for name, probe in self.probes.items():
+            if any(hot.get(other) for other in probe.get("suppressed_by", [])):
+                hot[name] = False
+
+        return OverlayReading(hot=hot, metrics=metrics)
 
     def reset(self) -> None:
         self._hot = {name: False for name in self.probes}

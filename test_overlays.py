@@ -85,11 +85,13 @@ CASES = [
     # genuinely have the interpreter box visible, hence lis_box=True.
     (os.path.join(TESTDATA_OVERLAYS, "venue_wide_shot.png"), True, False, False),
     (os.path.join(TESTDATA_OVERLAYS, "sky_no_banner.png"), True, False, False),
-    # Real ON example for the third overlay: a location caption ('VILLAMOR,
-    # PASAY CITY') over the camera panel, vMix input 40 - both the caption
-    # AND the ordinary bottom lower third are genuinely on at once here, they
-    # don't conflict since they're different screen regions/vMix inputs.
-    (os.path.join(TESTDATA_OVERLAYS, "centered-lowerthird.png"), False, True, True),
+    # Real example for the third overlay: a location caption ('VILLAMOR,
+    # PASAY CITY') over the camera panel, vMix input 40. Its own pixel
+    # reading is genuinely hot here (see test 3 below), but lower_third is
+    # ALSO on in this frame, and by production rule centered_lower_third must
+    # never be commanded on while lower_third is - so the reported hot state
+    # is suppressed to False (config.json's "suppressed_by").
+    (os.path.join(TESTDATA_OVERLAYS, "centered-lowerthird.png"), False, True, False),
     # Real false positive: a pale cream/gold song-lyrics caption (a totally
     # different graphic) was bright/desaturated enough to pass as the lower
     # third's "white panel", while a dark bluish shadow nearby passed as its
@@ -119,6 +121,21 @@ check("lis_box hot after first read", det._hot["lis_box"], True)
 # a synthetic frame with the probe value between off and on must stay hot
 # (this is exactly the mechanism that fixed the DUAL/BIG_LEFT flip-flop bug
 # earlier in this project - verified narrowly here for the new probes too)
+
+print("\n3. suppression: centered_lower_third never reports hot while lower_third does")
+img = load(os.path.join(TESTDATA_OVERLAYS, "centered-lowerthird.png"))
+det.reset()
+r = det.read(img)
+check("centered_lower_third's own signal is genuinely hot underneath",
+      det._hot["centered_lower_third"], True)
+check("but reported hot is suppressed by lower_third", r.hot["centered_lower_third"], False)
+# suppression must apply to the REPORTED state only, not overwrite the
+# probe's own hysteresis tracking - re-reading the same frame keeps the
+# underlying signal hot even though the reported value stays suppressed
+r2 = det.read(img)
+check("underlying signal still hot on a second read of the same frame",
+      det._hot["centered_lower_third"], True)
+check("reported value still suppressed", r2.hot["centered_lower_third"], False)
 
 print("\n" + ("ALL OK" if not failures else f"FAILED: {len(failures)} -> {failures}"))
 sys.exit(1 if failures else 0)

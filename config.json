@@ -140,10 +140,11 @@
       "on": 0.12, "off": 0.07
     },
     "centered_lower_third": {
-      "_note": "location caption over the camera panel, top-left (e.g. 'VILLAMOR, PASAY CITY', 'LAOAG CITY, ILOCOS NORTE') - same white-pill/blue-arc graphic family as lower_third but a different vMix input shown in a different spot, so it needs its own box: at lower_third's own box this caption reads far too low to be confused with it, and vice versa. Same 'banner' metric (min of blue-bar and white-panel fractions, white tightened to s<=15 - see overlays.py). Only ONE real ON example so far (testdata_overlays/centered-lowerthird.png, min=0.28); the closest false reading found is testdata/none_giacca_navy.png, now 0.042 after the s<=15 tightening (was 0.165 at s<=40) - on=0.20 sits above that with real margin, but with a single positive example this is less trustworthy than lower_third's thresholds. Get more real ON/OFF cases before tightening further.",
+      "_note": "location caption over the camera panel, top-left (e.g. 'VILLAMOR, PASAY CITY', 'LAOAG CITY, ILOCOS NORTE') - same white-pill/blue-arc graphic family as lower_third but a different vMix input shown in a different spot, so it needs its own box: at lower_third's own box this caption reads far too low to be confused with it, and vice versa. Same 'banner' metric (min of blue-bar and white-panel fractions, white tightened to s<=15 - see overlays.py). Only ONE real ON example so far (testdata_overlays/centered-lowerthird.png, min=0.28); the closest false reading found is testdata/none_giacca_navy.png, now 0.042 after the s<=15 tightening (was 0.165 at s<=40) - on=0.20 sits above that with real margin, but with a single positive example this is less trustworthy than lower_third's thresholds. Get more real ON/OFF cases before tightening further. By production rule (not a detection ambiguity) it must never be commanded on while lower_third is on - see suppressed_by.",
       "channel": 3, "vmix_input": 40,
       "kind": "banner", "box": [0.086, 0.061, 0.54, 0.119],
-      "on": 0.20, "off": 0.14
+      "on": 0.20, "off": 0.14,
+      "suppressed_by": ["lower_third"]
     }
   },
 
