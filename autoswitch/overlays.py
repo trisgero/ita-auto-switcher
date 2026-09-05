@@ -22,10 +22,16 @@ Only one OFF example exists so far - get more real cases before trusting the
 thresholds blindly the way earlier probes in this project were trusted on
 too little data.
 
-One exception to "independent": a probe can declare "suppressed_by": [other
-probe names] in config.json - by production rule, not because the two are
-hard to tell apart at the pixel level (centered_lower_third must never be
-commanded on while lower_third is). See OverlayDetector.read().
+One exception to "independent": the three lower thirds (lower_third,
+centered_lower_third, group_lower_third) can genuinely be pixel-on at the
+same time - each is a real, separately-toggled vMix overlay, and production
+sometimes leaves more than one actually on in vMix at once - but only one
+may ever be REPORTED on: by production rule, exactly one lower third shows
+at a time, the most specific one available (centered/group name a location
+or group; lower_third is the generic fallback). A probe declares
+"suppressed_by": [other probe names] in config.json to encode that priority;
+it's a policy choice, not a sign the probes can't tell the graphics apart at
+the pixel level. See OverlayDetector.read().
 """
 
 from __future__ import annotations
@@ -141,12 +147,14 @@ class OverlayDetector:
 
         # Some overlays take priority over others regardless of their own
         # pixel reading (config's "suppressed_by": [other probe names]) -
-        # e.g. centered_lower_third is suppressed whenever lower_third is on,
-        # by production rule, not because the two would be hard to tell
-        # apart. Applied to a COPY, not self._hot: the suppressed probe's own
-        # hysteresis keeps tracking its real signal underneath, so it comes
-        # back the instant the suppressing overlay goes off, without having
-        # to re-cross its "on" threshold.
+        # e.g. lower_third (the generic banner) is suppressed whenever a more
+        # specific lower third (centered_lower_third, group_lower_third) is
+        # on, by production rule: only one lower third is ever reported at a
+        # time even when more than one is genuinely lit up in vMix. Applied
+        # to a COPY, not self._hot: the suppressed probe's own hysteresis
+        # keeps tracking its real signal underneath, so it comes back the
+        # instant the suppressing overlay goes off, without having to
+        # re-cross its "on" threshold.
         hot = dict(self._hot)
         for name, probe in self.probes.items():
             if any(hot.get(other) for other in probe.get("suppressed_by", [])):

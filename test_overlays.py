@@ -89,12 +89,12 @@ CASES = [
     (os.path.join(TESTDATA_OVERLAYS, "venue_wide_shot.png"), True, False, False, False),
     (os.path.join(TESTDATA_OVERLAYS, "sky_no_banner.png"), True, False, False, False),
     # Real example for the third overlay: a location caption ('VILLAMOR,
-    # PASAY CITY') over the camera panel, vMix input 40. Its own pixel
-    # reading is genuinely hot here (see test 3 below), but lower_third is
-    # ALSO on in this frame, and by production rule centered_lower_third must
-    # never be commanded on while lower_third is - so the reported hot state
-    # is suppressed to False (config.json's "suppressed_by").
-    (os.path.join(TESTDATA_OVERLAYS, "centered-lowerthird.png"), False, True, False, False),
+    # PASAY CITY') over the camera panel, vMix input 40. lower_third's own
+    # pixels are ALSO genuinely on in this frame (see test 3 below), but by
+    # production rule the more specific lower third wins - lower_third's
+    # reported state is the one suppressed here (config.json's
+    # "suppressed_by"), not centered_lower_third's.
+    (os.path.join(TESTDATA_OVERLAYS, "centered-lowerthird.png"), False, False, True, False),
     # Real false positive: a pale cream/gold song-lyrics caption (a totally
     # different graphic) was bright/desaturated enough to pass as the lower
     # third's "white panel", while a dark bluish shadow nearby passed as its
@@ -102,11 +102,18 @@ CASES = [
     # (see overlays.py's "banner" kind comment).
     (os.path.join(TESTDATA_OVERLAYS, "shouldnt-appear-lt.png"), False, False, False, False),
     # Real ON example for the fourth overlay: an 'ALL CELEBRANTS' group-name
-    # tag, vMix input 54. Its own pixel reading is genuinely hot here (see
-    # test 4 below), but lower_third is ALSO on in this exact frame, and by
-    # production rule group_lower_third must never be commanded on while
-    # another lower third is - so the reported hot state is suppressed.
-    (os.path.join(TESTDATA_OVERLAYS, "group-lowerthird.png"), True, True, False, False),
+    # tag, vMix input 54. lower_third's own pixels are ALSO genuinely on in
+    # this exact frame (see test 4 below), but by production rule the more
+    # specific lower third wins - lower_third's reported state is suppressed.
+    (os.path.join(TESTDATA_OVERLAYS, "group-lowerthird.png"), True, False, False, True),
+    # Real false positive reported live: only centered_lower_third ('SAN
+    # JOSÉ, COSTA RICA') should have been showing, but lower_third's own
+    # pixels genuinely read hot too (same clean banner as every confirmed-
+    # true case, not a lookalike) - this is exactly the "more than one lower
+    # third genuinely lit up in vMix at once" scenario suppressed_by exists
+    # for, and it's what proved the priority had to run centered/group over
+    # main, not the reverse (see config.json's lower_third._note history).
+    (os.path.join(TESTDATA_OVERLAYS, "shouldnt-appear-main-lt.png"), False, False, True, False),
 ]
 
 print("\n1. all four overlay probes on real frames")
@@ -132,28 +139,28 @@ check("lis_box hot after first read", det._hot["lis_box"], True)
 # (this is exactly the mechanism that fixed the DUAL/BIG_LEFT flip-flop bug
 # earlier in this project - verified narrowly here for the new probes too)
 
-print("\n3. suppression: centered_lower_third never reports hot while lower_third does")
+print("\n3. suppression: lower_third never reports hot while centered_lower_third does")
 img = load(os.path.join(TESTDATA_OVERLAYS, "centered-lowerthird.png"))
 det.reset()
 r = det.read(img)
-check("centered_lower_third's own signal is genuinely hot underneath",
-      det._hot["centered_lower_third"], True)
-check("but reported hot is suppressed by lower_third", r.hot["centered_lower_third"], False)
+check("lower_third's own signal is genuinely hot underneath",
+      det._hot["lower_third"], True)
+check("but reported hot is suppressed by centered_lower_third", r.hot["lower_third"], False)
 # suppression must apply to the REPORTED state only, not overwrite the
 # probe's own hysteresis tracking - re-reading the same frame keeps the
 # underlying signal hot even though the reported value stays suppressed
 r2 = det.read(img)
 check("underlying signal still hot on a second read of the same frame",
-      det._hot["centered_lower_third"], True)
-check("reported value still suppressed", r2.hot["centered_lower_third"], False)
+      det._hot["lower_third"], True)
+check("reported value still suppressed", r2.hot["lower_third"], False)
 
-print("\n4. suppression: group_lower_third never reports hot while lower_third does")
+print("\n4. suppression: lower_third never reports hot while group_lower_third does")
 img = load(os.path.join(TESTDATA_OVERLAYS, "group-lowerthird.png"))
 det.reset()
 r = det.read(img)
-check("group_lower_third's own signal is genuinely hot underneath",
-      det._hot["group_lower_third"], True)
-check("but reported hot is suppressed by lower_third", r.hot["group_lower_third"], False)
+check("lower_third's own signal is genuinely hot underneath",
+      det._hot["lower_third"], True)
+check("but reported hot is suppressed by group_lower_third", r.hot["lower_third"], False)
 
 print("\n" + ("ALL OK" if not failures else f"FAILED: {len(failures)} -> {failures}"))
 sys.exit(1 if failures else 0)
