@@ -105,13 +105,15 @@ Four details that remove false positives:
 - **Hysteresis** (a lower exit threshold than the entry one) and **debounce**
   (3 agreeing readings, ~375 ms) before accepting a change.
 
-## Independent overlays: lower third and sign-language box
+## Independent overlays: lower third, centered lower third, sign-language box
 
 Separate from the verse-card state machine above: the lower third (blue bar
-+ gold arc banner, whatever text it holds) and the sign-language interpreter
-box (bottom-left) are toggled independently through vMix's `OverlayInputN`
-API, in `autoswitch/overlays.py` and reconciled every tick in `main.py`
-alongside the verse-card program input, sharing one vMix state read per tick.
++ white panel banner, whatever text it holds), the centered lower third (the
+same graphic family shown as a location caption over the camera panel, e.g.
+"VILLAMOR, PASAY CITY") and the sign-language interpreter box (bottom-left)
+are toggled independently through vMix's `OverlayInputN` API, in
+`autoswitch/overlays.py` and reconciled every tick in `main.py` alongside the
+verse-card program input, sharing one vMix state read per tick.
 
 They're **not** part of the verse-card rules on purpose: production keeps
 both on through many different segments — including performances that the
@@ -124,10 +126,15 @@ The signal is much stronger than the verse-card probes, because the question
 is binary presence/absence of a flat-color graphic against a busy
 photographic image, not "which of several similar cards is this":
 
-| probe | worst ON example | OFF example |
+| probe | worst ON example | worst OFF/false example |
 |---|---|---|
-| `lis_box` (light-blue backdrop behind the interpreter) | 0.36 | 0.03 |
-| `lower_third` (saturated blue + white + gold) | 0.83 | 0.11 |
+| `lis_box` (light-blue backdrop behind the interpreter) | 0.36 | 0.02 |
+| `lower_third` (saturated blue + white panel, min of both) | 0.19 | 0.05 |
+| `centered_lower_third` (same graphic, over the camera panel) | 0.28 | 0.17 |
+
+`centered_lower_third` has only **one real ON example**
+(`testdata_overlays/centered-lowerthird.png`) so its margin is much tighter
+than the other two - see its `_note` in `config.json`.
 
 **Only one real OFF example exists so far** (`testdata_overlays/houston_off.png`).
 The margins above are wide enough to trust provisionally, but — same lesson
