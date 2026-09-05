@@ -1,4 +1,4 @@
-"""Independent on/off overlay detectors: lower third and sign-language box.
+"""Independent on/off overlay detectors: lower thirds and sign-language box.
 
 Different problem from the verse-card state machine in detect.py: these two
 graphics are NOT mutually exclusive states of "what's on screen" - production
@@ -42,6 +42,7 @@ from .detect import _slice
 class OverlayReading:
     hot: dict[str, bool] = field(default_factory=dict)
     metrics: dict[str, float] = field(default_factory=dict)
+    stds: dict[str, float] = field(default_factory=dict)
 
 
 class OverlayDetector:
@@ -49,10 +50,11 @@ class OverlayDetector:
         self.probes = {k: v for k, v in cfg.items() if not k.startswith("_")}
         self._hot: dict[str, bool] = {name: False for name in self.probes}
 
-    def _measure(self, probe: dict, hsv: np.ndarray) -> float:
+    def _measure(self, probe: dict, hsv: np.ndarray) -> tuple[float, float]:
         patch = _slice(hsv, probe["box"])
         h, s, v = patch[:, :, 0], patch[:, :, 1], patch[:, :, 2]
         kind = probe.get("kind", "lightblue")
+        std = float(v.std())
 
         if kind == "lightblue":
             # LIS box: solid light-blue backdrop behind the interpreter. The
@@ -94,22 +96,48 @@ class OverlayDetector:
             # the cream false positive to ~0.
             blue = ((h >= 100) & (h <= 130) & (s >= 100)).mean()
             white = ((v >= 225) & (s <= 15)).mean()
-            return float(min(blue, white))
+            return float(min(blue, white)), std
+        elif kind == "gold":
+            # Group lower third: solid gold/orange panel behind white bold
+            # text (testdata_overlays/group-lowerthird.png, "ALL CELEBRANTS").
+            # Gold hue alone is fooled by a sunset background - the exact
+            # same lesson learned for lower_third's dropped "gold arc"
+            # component (see git history): a tropical sunset b-roll measured
+            # 0.22 on hue+saturation alone (testdata_overlays/sunset_no_
+            # banner.png), a real but distant margin from this graphic's
+            # 0.91. max_std makes that margin much wider for free: the real
+            # panel is flat (V std ~7), a photographed sunset sky isn't (V
+            # std 36-56) - same "graphic panel vs busy photo" signal
+            # detect.py's ROIs already use, applied here as a second,
+            # independent gate rather than tightening the color mask itself.
+            mask = (
+                (h >= probe.get("h_min", 15)) & (h <= probe.get("h_max", 30))
+                & (s >= probe.get("s_min", 150)) & (v >= probe.get("v_min", 180))
+            )
         else:
             raise ValueError(f"unknown overlay probe kind: {kind!r}")
 
-        return float(mask.mean())
+        return float(mask.mean()), std
 
     def read(self, frame: np.ndarray) -> OverlayReading:
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         metrics: dict[str, float] = {}
+        stds: dict[str, float] = {}
         for name, probe in self.probes.items():
-            value = self._measure(probe, hsv)
+            value, std = self._measure(probe, hsv)
             metrics[name] = value
+            stds[name] = std
+
+            # A graphic panel is flat; a photographed scene isn't. Only
+            # gates probes that declare max_std - existing probes are
+            # untouched.
+            max_std = probe.get("max_std")
+            flat = max_std is None or std <= float(max_std)
+
             if self._hot[name]:
-                self._hot[name] = value >= float(probe["off"])
+                self._hot[name] = value >= float(probe["off"]) and flat
             else:
-                self._hot[name] = value >= float(probe["on"])
+                self._hot[name] = value >= float(probe["on"]) and flat
 
         # Some overlays take priority over others regardless of their own
         # pixel reading (config's "suppressed_by": [other probe names]) -
@@ -124,7 +152,7 @@ class OverlayDetector:
             if any(hot.get(other) for other in probe.get("suppressed_by", [])):
                 hot[name] = False
 
-        return OverlayReading(hot=hot, metrics=metrics)
+        return OverlayReading(hot=hot, metrics=metrics, stds=stds)
 
     def reset(self) -> None:
         self._hot = {name: False for name in self.probes}

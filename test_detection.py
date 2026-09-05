@@ -136,7 +136,7 @@ else:
 
 print("\n4. state -> vMix input mapping")
 for state, expected in (("NONE", 2), ("FULL", 3), ("LEFT", 8),
-                        ("BIG_LEFT", 49), ("DUAL", 2), ("TRIPLE", 2)):
+                        ("BIG_LEFT", 49), ("DUAL", 29), ("TRIPLE", 30)):
     check(f"{state}", cfg["states"][state], expected)
 
 # Every commandable state must be among managed_inputs, otherwise the

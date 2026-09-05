@@ -15,18 +15,18 @@
   },
 
   "states": {
-    "_comment": "Detected state -> vMix input sent to program with Merge. DUAL/TRIPLE deliberately stay on 2 until they have a dedicated input in the preset: they are recognized and logged, but the Zoom feed stays on screen. Candidates for later: DUAL -> 29, TRIPLE -> 30. When you wire them up, change the number here AND add it to managed_inputs.",
+    "_comment": "Detected state -> vMix input sent to program with Merge. DUAL and TRIPLE now have their own dedicated inputs in the preset (wired up).",
     "NONE": 2,
     "FULL": 3,
     "LEFT": 8,
     "RIGHT": 9,
     "BIG_LEFT": 49,
-    "DUAL": 2,
-    "TRIPLE": 2
+    "DUAL": 29,
+    "TRIPLE": 30
   },
 
   "_managed_comment": "Inputs the automation is allowed to command. If the program ends up on an input OUTSIDE this list, it goes hands-off and stops correcting: that's how it avoids fighting the operator. 49 = '3 BRO VERSE L', has no keyboard shortcut in the current template.",
-  "managed_inputs": [2, 3, 8, 9, 49],
+  "managed_inputs": [2, 3, 8, 9, 29, 30, 49],
 
   "detector": {
     "blur": 5,
@@ -145,6 +145,14 @@
       "kind": "banner", "box": [0.086, 0.061, 0.54, 0.119],
       "on": 0.20, "off": 0.14,
       "suppressed_by": ["lower_third"]
+    },
+    "group_lower_third": {
+      "_note": "'ALL CELEBRANTS' style group-name tag, bottom-left, between the lis box and the main banner (see testdata_overlays/group-lowerthird.png) - a solid gold/orange panel with bold white text, a different color family from the other two lower thirds so it gets its own 'gold' kind rather than reusing 'banner'. Gold hue alone repeats the exact mistake already fixed once for lower_third's dropped 'gold arc': a tropical sunset b-roll measures 0.22 here (testdata_overlays/sunset_no_banner.png) against this graphic's 0.91 - a real but narrower margin than ideal. max_std=20 covers the rest of that gap for free: the real panel is flat (V std ~7), a photographed sunset sky isn't (V std 36-56). Only ONE real ON example so far. By production rule it must never be commanded on while either other lower third is (see suppressed_by) - 'other LT wins' regardless of which one.",
+      "channel": 5, "vmix_input": 54,
+      "kind": "gold", "box": [0.19, 0.83, 0.13, 0.13],
+      "h_min": 15, "h_max": 30, "s_min": 150, "v_min": 180, "max_std": 20,
+      "on": 0.30, "off": 0.15,
+      "suppressed_by": ["lower_third", "centered_lower_third"]
     }
   },
 
