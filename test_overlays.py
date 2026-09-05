@@ -50,42 +50,50 @@ def load(path: str):
 
 det = OverlayDetector(cfg["overlays"])
 
-# (path, expected lis_box hot, expected lower_third hot)
+# (path, expected lis_box hot, expected lower_third hot, expected centered_lower_third hot)
 CASES = [
-    (os.path.join(SHOTS, "full.png"), True, True),
-    (os.path.join(SHOTS, "left.png"), True, True),
-    (os.path.join(SHOTS, "big-left.png"), True, True),
-    (os.path.join(SHOTS, "dual.png"), True, True),
-    (os.path.join(SHOTS, "triple.png"), True, True),
-    (os.path.join(TESTDATA, "dual_verso_lungo.png"), True, True),
-    (os.path.join(TESTDATA, "full_std_bordo.png"), True, True),
-    (os.path.join(TESTDATA, "left_output_italiano.png"), True, True),
+    (os.path.join(SHOTS, "full.png"), True, True, False),
+    (os.path.join(SHOTS, "left.png"), True, True, False),
+    (os.path.join(SHOTS, "big-left.png"), True, True, False),
+    (os.path.join(SHOTS, "dual.png"), True, True, False),
+    (os.path.join(SHOTS, "triple.png"), True, True, False),
+    (os.path.join(TESTDATA, "dual_verso_lungo.png"), True, True, False),
+    (os.path.join(TESTDATA, "full_std_bordo.png"), True, True, False),
+    (os.path.join(TESTDATA, "left_output_italiano.png"), True, True, False),
     # These two were originally (wrongly) marked lis_box=True without
     # actually checking the image - neither has the interpreter box visible
     # at all, just the verse card + lyrics + lower third. Confirmed visually.
-    (os.path.join(TESTDATA, "left_verso_testo_canzone.png"), False, True),
-    (os.path.join(TESTDATA, "none_performance_bianco.png"), False, True),
-    (os.path.join(TESTDATA, "none_giacca_navy.png"), True, True),
-    (os.path.join(TESTDATA_OVERLAYS, "houston_off.png"), False, False),
+    (os.path.join(TESTDATA, "left_verso_testo_canzone.png"), False, True, False),
+    (os.path.join(TESTDATA, "none_performance_bianco.png"), False, True, False),
+    # The white/gold circular logo behind the guest sits in the
+    # centered_lower_third box and is the closest false reading found for it
+    # so far (0.165, vs on=0.20) - see config.json's _note for that probe.
+    (os.path.join(TESTDATA, "none_giacca_navy.png"), True, True, False),
+    (os.path.join(TESTDATA_OVERLAYS, "houston_off.png"), False, False, False),
     # Real false positive from the field: a lower-third banner variant whose
     # saturated blue corner reached into the lis_box ROI and got misread as
     # the interpreter box, even though only the lower third was on screen.
-    (os.path.join(TESTDATA_OVERLAYS, "false_positive_lower_third_only.png"), False, True),
+    (os.path.join(TESTDATA_OVERLAYS, "false_positive_lower_third_only.png"), False, True, False),
     # Same song-title segment, ~2.5 minutes apart: a golden sunset background
     # used to read as lower_third=True purely from its hue (see overlays.py's
     # "banner" kind comment) - fixed by dropping the gold-arc component.
-    (os.path.join(TESTDATA_OVERLAYS, "sunset_with_banner.png"), False, True),
-    (os.path.join(TESTDATA_OVERLAYS, "sunset_no_banner.png"), False, False),
+    (os.path.join(TESTDATA_OVERLAYS, "sunset_with_banner.png"), False, True, False),
+    (os.path.join(TESTDATA_OVERLAYS, "sunset_no_banner.png"), False, False, False),
     # Two more false positives from the same evening, both fixed by requiring
     # blue AND white together instead of blue alone: a wide venue shot (stage
     # lighting reads as "saturated blue") and a plain sky background. Both
     # genuinely have the interpreter box visible, hence lis_box=True.
-    (os.path.join(TESTDATA_OVERLAYS, "venue_wide_shot.png"), True, False),
-    (os.path.join(TESTDATA_OVERLAYS, "sky_no_banner.png"), True, False),
+    (os.path.join(TESTDATA_OVERLAYS, "venue_wide_shot.png"), True, False, False),
+    (os.path.join(TESTDATA_OVERLAYS, "sky_no_banner.png"), True, False, False),
+    # Real ON example for the third overlay: a location caption ('VILLAMOR,
+    # PASAY CITY') over the camera panel, vMix input 40 - both the caption
+    # AND the ordinary bottom lower third are genuinely on at once here, they
+    # don't conflict since they're different screen regions/vMix inputs.
+    (os.path.join(TESTDATA_OVERLAYS, "centered-lowerthird.png"), False, True, True),
 ]
 
-print("\n1. both overlay probes on real frames")
-for path, expect_lis, expect_banner in CASES:
+print("\n1. all three overlay probes on real frames")
+for path, expect_lis, expect_banner, expect_centered in CASES:
     img = load(path)
     label = os.path.basename(path)
     if img is None:
@@ -95,6 +103,7 @@ for path, expect_lis, expect_banner in CASES:
     r = det.read(img)
     check(f"{label} lis_box", r.hot.get("lis_box"), expect_lis)
     check(f"{label} lower_third", r.hot.get("lower_third"), expect_banner)
+    check(f"{label} centered_lower_third", r.hot.get("centered_lower_third"), expect_centered)
 
 print("\n2. hysteresis: a probe that's on stays on below 'on' but above 'off'")
 img = load(os.path.join(SHOTS, "full.png"))
