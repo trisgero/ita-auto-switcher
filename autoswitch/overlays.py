@@ -75,8 +75,20 @@ class OverlayDetector:
             # one, which is exactly what this banner graphic looks like.
             # (An earlier version also had a "gold arc" range, dropped
             # separately for matching a sunset's hue - see git history.)
+            #
+            # s<=40 alone was still too loose: a pale cream/gold lyrics
+            # caption (a completely different graphic, H~25-33) has low
+            # enough saturation (S~21-31) to pass as "white paper panel",
+            # while a dark bluish shadow nearby passed as "the blue bar"
+            # (blue has no v_min) - together they crossed the threshold with
+            # zero real banner on screen (testdata_overlays/shouldnt-appear-
+            # lt.png). Real white text/panel pixels are much closer to true
+            # white (median S 0-4 across every real ON example) than a
+            # cream tint is, so s<=15 keeps the real banner's white fraction
+            # almost untouched (0.16-0.21, was 0.20-0.27) while collapsing
+            # the cream false positive to ~0.
             blue = ((h >= 100) & (h <= 130) & (s >= 100)).mean()
-            white = ((v >= 225) & (s <= 40)).mean()
+            white = ((v >= 225) & (s <= 15)).mean()
             return float(min(blue, white))
         else:
             raise ValueError(f"unknown overlay probe kind: {kind!r}")

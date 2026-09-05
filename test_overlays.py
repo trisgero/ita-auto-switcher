@@ -90,6 +90,12 @@ CASES = [
     # AND the ordinary bottom lower third are genuinely on at once here, they
     # don't conflict since they're different screen regions/vMix inputs.
     (os.path.join(TESTDATA_OVERLAYS, "centered-lowerthird.png"), False, True, True),
+    # Real false positive: a pale cream/gold song-lyrics caption (a totally
+    # different graphic) was bright/desaturated enough to pass as the lower
+    # third's "white panel", while a dark bluish shadow nearby passed as its
+    # "blue bar" - fixed by tightening the white component's saturation cap
+    # (see overlays.py's "banner" kind comment).
+    (os.path.join(TESTDATA_OVERLAYS, "shouldnt-appear-lt.png"), False, False, False),
 ]
 
 print("\n1. all three overlay probes on real frames")
