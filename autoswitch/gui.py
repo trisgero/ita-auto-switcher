@@ -73,7 +73,10 @@ class App(tk.Tk):
 
         self.cfg = load_config(self.config_path)
         self._thumb_ref: tk.PhotoImage | None = None
+        self._selected_kind: str = "state"  # "state" or "overlay"
         self._selected_state: str | None = None
+        self._selected_overlay: str | None = None
+        self._list_kinds: list[tuple[str, str]] = []
 
         self.log_queue: queue.Queue[str] = queue.Queue()
         self.switcher: Switcher | None = None
@@ -113,6 +116,8 @@ class App(tk.Tk):
         ttk.Label(top, textvariable=self.monitor_var, font=FONT).pack(side="left", padx=(0, 16))
         ttk.Button(top, text="Change monitor...", command=self._open_monitor_picker).pack(side="left")
         ttk.Button(top, text="Refresh status", command=self._refresh_status).pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Input & template summary...", command=self._show_startup_summary).pack(
+            side="left", padx=(6, 0))
 
         self.run_btn_test = ttk.Button(top, text="TEST (doesn't touch vMix)", command=self._start_test)
         self.run_btn_live = ttk.Button(top, text="GO LIVE", command=self._start_live)
@@ -141,7 +146,8 @@ class App(tk.Tk):
         btns = ttk.Frame(left)
         btns.pack(fill="x")
         ttk.Button(btns, text="New...", command=self._new_template).pack(side="left")
-        ttk.Button(btns, text="Delete", command=self._delete_template).pack(side="left", padx=(6, 0))
+        self.delete_btn = ttk.Button(btns, text="Delete", command=self._delete_template)
+        self.delete_btn.pack(side="left", padx=(6, 0))
 
         ttk.Separator(left, orient="horizontal").pack(fill="x", pady=8)
         ttk.Button(left, text="Verify all", command=self._run_verify_all).pack(fill="x")
@@ -174,6 +180,17 @@ class App(tk.Tk):
                                              command=self._on_enabled_changed)
         self.enabled_check.grid(row=0, column=2, sticky="w")
 
+        # Only shown for overlays (lis_box, lower_third, ...): which vMix
+        # OverlayInput channel toggles them. States don't have a channel.
+        self.channel_label = ttk.Label(form, text="Channel:", font=FONT)
+        self.channel_var = tk.StringVar()
+        self.channel_entry = ttk.Spinbox(form, from_=1, to=99, textvariable=self.channel_var, width=6,
+                                         command=self._on_channel_changed)
+        self.channel_entry.bind("<FocusOut>", lambda _e: self._on_channel_changed())
+        self.channel_entry.bind("<Return>", lambda _e: self._on_channel_changed())
+        self.channel_label.grid(row=0, column=2, sticky="w")
+        self.channel_entry.grid(row=0, column=3, sticky="w", padx=(6, 0))
+
         ttk.Separator(right, orient="horizontal").pack(fill="x", pady=8)
 
         ttk.Label(right, text="Primary screenshot (calibration)", font=FONT_BOLD).pack(anchor="w")
@@ -183,8 +200,10 @@ class App(tk.Tk):
         self.thumb_label.pack(side="left")
         shot_btns = ttk.Frame(shot_row)
         shot_btns.pack(side="left", fill="y", padx=(10, 0))
-        ttk.Button(shot_btns, text="Choose screenshot...", command=self._choose_primary_shot).pack(fill="x")
-        ttk.Button(shot_btns, text="Remove", command=self._remove_primary_shot).pack(fill="x", pady=(4, 0))
+        self.choose_shot_btn = ttk.Button(shot_btns, text="Choose screenshot...", command=self._choose_primary_shot)
+        self.choose_shot_btn.pack(fill="x")
+        self.remove_shot_btn = ttk.Button(shot_btns, text="Remove", command=self._remove_primary_shot)
+        self.remove_shot_btn.pack(fill="x", pady=(4, 0))
 
         ttk.Label(right, text="Additional verification screenshots", font=FONT_BOLD).pack(anchor="w", pady=(8, 0))
         verif_row = ttk.Frame(right)
@@ -193,8 +212,11 @@ class App(tk.Tk):
         self.verif_list.pack(side="left", fill="both", expand=True)
         verif_btns = ttk.Frame(verif_row)
         verif_btns.pack(side="left", fill="y", padx=(10, 0))
-        ttk.Button(verif_btns, text="Add...", command=self._add_verif_shot).pack(fill="x")
-        ttk.Button(verif_btns, text="Remove", command=self._remove_verif_shot).pack(fill="x", pady=(4, 0))
+        self.add_verif_btn = ttk.Button(verif_btns, text="Add...", command=self._add_verif_shot)
+        self.add_verif_btn.pack(fill="x")
+        self.remove_verif_btn = ttk.Button(verif_btns, text="Remove", command=self._remove_verif_shot)
+        self.remove_verif_btn.pack(fill="x", pady=(4, 0))
+        self._shot_buttons = [self.choose_shot_btn, self.remove_shot_btn, self.add_verif_btn, self.remove_verif_btn]
 
         ttk.Separator(right, orient="horizontal").pack(fill="x", pady=8)
         ttk.Label(right, text="Log", font=FONT_BOLD).pack(anchor="w")
@@ -220,6 +242,9 @@ class App(tk.Tk):
     def _states(self) -> list[str]:
         return [k for k in self.cfg["states"] if not k.startswith("_")]
 
+    def _overlays(self) -> list[str]:
+        return [k for k in self.cfg.get("overlays", {}) if not k.startswith("_")]
+
     def _log(self, text: str) -> None:
         self.log_text.configure(state="normal")
         self.log_text.insert("end", text + "\n")
@@ -230,25 +255,50 @@ class App(tk.Tk):
 
     def _refresh_template_list(self) -> None:
         self.template_list.delete(0, "end")
+        self._list_kinds = []
         for state in self._states():
             self.template_list.insert("end", state)
-        if self._selected_state and self._selected_state in self._states():
-            idx = self._states().index(self._selected_state)
+            self._list_kinds.append(("state", state))
+        overlays = self._overlays()
+        if overlays:
+            self.template_list.insert("end", "── Overlays ──")
+            self._list_kinds.append(("separator", ""))
+            for name in overlays:
+                self.template_list.insert("end", f"  {name}")
+                self._list_kinds.append(("overlay", name))
+
+        target = None
+        if self._selected_kind == "state" and self._selected_state in self._states():
+            target = ("state", self._selected_state)
+        elif self._selected_kind == "overlay" and self._selected_overlay in overlays:
+            target = ("overlay", self._selected_overlay)
+        if target is not None:
+            idx = self._list_kinds.index(target)
             self.template_list.selection_set(idx)
-            self._show_template(self._selected_state)
+            self._show_item(*target)
         elif self._states():
             self.template_list.selection_set(0)
-            self._show_template(self._states()[0])
+            self._show_item("state", self._states()[0])
 
     def _on_template_selected(self, _evt=None) -> None:
         sel = self.template_list.curselection()
         if not sel:
             return
-        state = self.template_list.get(sel[0])
-        self._show_template(state)
+        kind, name = self._list_kinds[sel[0]]
+        if kind == "separator":
+            return
+        self._show_item(kind, name)
 
-    def _show_template(self, state: str) -> None:
+    def _show_item(self, kind: str, name: str) -> None:
+        if kind == "state":
+            self._show_state(name)
+        else:
+            self._show_overlay(name)
+
+    def _show_state(self, state: str) -> None:
+        self._selected_kind = "state"
         self._selected_state = state
+        self._selected_overlay = None
         self.detail_title.configure(text=state)
 
         rule = rules_by_state(self.cfg).get(state)
@@ -263,6 +313,9 @@ class App(tk.Tk):
             )
 
         self.input_var.set(str(self.cfg["states"].get(state, 0)))
+        self.channel_label.grid_remove()
+        self.channel_entry.grid_remove()
+        self.enabled_check.grid()
 
         if rule is not None:
             self.enabled_check.configure(state="normal")
@@ -271,12 +324,43 @@ class App(tk.Tk):
             self.enabled_check.configure(state="disabled")
             self.enabled_var.set(has_rule)
 
+        self.delete_btn.configure(state="normal")
+        for b in self._shot_buttons:
+            b.configure(state="normal")
+
         primary_path = self._primary_shot_path(state)
         self._set_thumb(primary_path)
 
         self.verif_list.delete(0, "end")
         for case in self._verif_cases(state):
             self.verif_list.insert("end", os.path.basename(case))
+
+    def _show_overlay(self, name: str) -> None:
+        self._selected_kind = "overlay"
+        self._selected_overlay = name
+        self._selected_state = None
+        probe = self.cfg["overlays"][name]
+        self.detail_title.configure(text=f"{name}  (independent overlay)")
+        self.detail_note.configure(
+            text="Independent overlay, toggled on/off via vMix's OverlayInput<channel> "
+            "API, separate from the verse-card templates above. Channel and vMix input "
+            "here must match how this overlay is actually wired in vMix. Its detection "
+            "geometry/thresholds are calibrated separately (config.json's \"overlays\" "
+            "section and calibrate.py), not from a screenshot picked here."
+        )
+
+        self.input_var.set(str(probe.get("vmix_input", 0)))
+        self.channel_var.set(str(probe.get("channel", 0)))
+        self.enabled_check.grid_remove()
+        self.channel_label.grid()
+        self.channel_entry.grid()
+
+        self.delete_btn.configure(state="disabled")
+        for b in self._shot_buttons:
+            b.configure(state="disabled")
+
+        self._set_thumb(None)
+        self.verif_list.delete(0, "end")
 
     def _set_thumb(self, path: str | None) -> None:
         if path and os.path.exists(path):
@@ -327,6 +411,7 @@ class App(tk.Tk):
             self.cfg["states"][name] = 2
             self._sync_managed_inputs()
             self._save_config()
+            self._selected_kind = "state"
             self._selected_state = name
             self._refresh_template_list()
             dialog.destroy()
@@ -357,14 +442,26 @@ class App(tk.Tk):
         self._refresh_template_list()
 
     def _on_input_changed(self) -> None:
-        if not self._selected_state:
-            return
         try:
             number = int(self.input_var.get())
         except ValueError:
             return
-        self.cfg["states"][self._selected_state] = number
-        self._sync_managed_inputs()
+        if self._selected_kind == "state" and self._selected_state:
+            self.cfg["states"][self._selected_state] = number
+            self._sync_managed_inputs()
+            self._save_config()
+        elif self._selected_kind == "overlay" and self._selected_overlay:
+            self.cfg["overlays"][self._selected_overlay]["vmix_input"] = number
+            self._save_config()
+
+    def _on_channel_changed(self) -> None:
+        if self._selected_kind != "overlay" or not self._selected_overlay:
+            return
+        try:
+            number = int(self.channel_var.get())
+        except ValueError:
+            return
+        self.cfg["overlays"][self._selected_overlay]["channel"] = number
         self._save_config()
 
     def _on_enabled_changed(self) -> None:
@@ -544,30 +641,31 @@ class App(tk.Tk):
 
     def _show_startup_summary(self) -> None:
         dialog = tk.Toplevel(self)
-        dialog.title("Riepilogo input vMix")
+        dialog.title("vMix Input & Template Summary")
         dialog.transient(self)
         dialog.grab_set()
 
         ttk.Label(
             dialog,
-            text="Verifica che ogni template e overlay sia associato all'input vMix giusto prima di andare live.",
+            text="Verify that every template and overlay is mapped to the right vMix input "
+            "before going live. Double-click a value in the Input column to change it.",
             font=FONT, wraplength=560, justify="left",
         ).pack(anchor="w", padx=12, pady=(12, 8))
 
-        ttk.Label(dialog, text="Stati (card versetto)", font=FONT_BOLD).pack(anchor="w", padx=12)
-        cols = ("template", "input", "titolo vMix")
+        ttk.Label(dialog, text="States (verse card)", font=FONT_BOLD).pack(anchor="w", padx=12)
+        cols = ("template", "input", "vmix_title")
         tree_states = ttk.Treeview(dialog, columns=cols, show="headings", selectmode="none", height=7)
-        for c, w in zip(cols, (120, 60, 300)):
-            tree_states.heading(c, text=c.capitalize())
+        for c, label, w in zip(cols, ("Template", "Input", "vMix Title"), (120, 60, 300)):
+            tree_states.heading(c, text=label)
             tree_states.column(c, width=w, anchor="w")
         tree_states.pack(fill="x", padx=12, pady=(2, 10))
 
-        ttk.Label(dialog, text="Overlay indipendenti (lis box, lower third, ...)", font=FONT_BOLD).pack(
+        ttk.Label(dialog, text="Independent overlays (lis box, lower third, ...)", font=FONT_BOLD).pack(
             anchor="w", padx=12)
-        cols2 = ("overlay", "canale", "input", "titolo vMix")
+        cols2 = ("overlay", "channel", "input", "vmix_title")
         tree_overlays = ttk.Treeview(dialog, columns=cols2, show="headings", selectmode="none", height=4)
-        for c, w in zip(cols2, (140, 60, 60, 260)):
-            tree_overlays.heading(c, text=c.capitalize())
+        for c, label, w in zip(cols2, ("Overlay", "Channel", "Input", "vMix Title"), (140, 60, 60, 260)):
+            tree_overlays.heading(c, text=label)
             tree_overlays.column(c, width=w, anchor="w")
         tree_overlays.pack(fill="x", padx=12, pady=(2, 4))
 
@@ -579,22 +677,85 @@ class App(tk.Tk):
             state_rows, overlay_rows = self._summary_rows()
             tree_states.delete(*tree_states.get_children())
             for tname, number, title in state_rows:
-                tree_states.insert("", "end", values=(tname, number, title or "-"))
+                tree_states.insert("", "end", iid=tname, values=(tname, number, title or "-"))
             tree_overlays.delete(*tree_overlays.get_children())
             for oname, channel, vmix_input, title in overlay_rows:
-                tree_overlays.insert("", "end", values=(oname, channel, vmix_input, title or "-"))
+                tree_overlays.insert("", "end", iid=oname, values=(oname, channel, vmix_input, title or "-"))
             if not self._vmix_input_titles():
-                note_var.set("vMix non raggiungibile: impossibile mostrare i titoli reali degli input, "
-                              "solo i numeri configurati. Premi \"Aggiorna\" quando vMix è pronto.")
+                note_var.set("vMix unreachable: can't show the real input titles, only the "
+                              "configured numbers. Click \"Refresh\" once vMix is ready.")
             else:
                 note_var.set("")
+
+        def edit_input_cell(tree: ttk.Treeview, column_id: str, on_commit) -> None:
+            def on_double_click(event: tk.Event) -> None:
+                if tree.identify("region", event.x, event.y) != "cell":
+                    return
+                if tree.identify_column(event.x) != column_id:
+                    return
+                row = tree.identify_row(event.y)
+                if not row:
+                    return
+                bbox = tree.bbox(row, column_id)
+                if not bbox:
+                    return
+                x, y, w, h = bbox
+                current = tree.set(row, column_id)
+                edit_var = tk.StringVar(value=current)
+                entry = ttk.Entry(tree, textvariable=edit_var, font=FONT)
+                entry.place(x=x, y=y, width=w, height=h)
+                entry.focus_set()
+                entry.selection_range(0, "end")
+
+                def finish(_evt=None) -> None:
+                    entry.destroy()
+
+                def commit(_evt=None) -> None:
+                    new_value = edit_var.get().strip()
+                    finish()
+                    if new_value and new_value != current:
+                        on_commit(row, new_value)
+
+                entry.bind("<Return>", commit)
+                entry.bind("<FocusOut>", commit)
+                entry.bind("<Escape>", finish)
+
+            tree.bind("<Double-1>", on_double_click)
+
+        def commit_state_input(state: str, new_value: str) -> None:
+            try:
+                number = int(new_value)
+            except ValueError:
+                messagebox.showerror("Auto-switcher", f"'{new_value}' is not a valid input number.")
+                return
+            self.cfg["states"][state] = number
+            self._sync_managed_inputs()
+            self._save_config()
+            populate()
+            if self._selected_kind == "state" and self._selected_state == state:
+                self._show_state(state)
+
+        def commit_overlay_input(overlay: str, new_value: str) -> None:
+            try:
+                number = int(new_value)
+            except ValueError:
+                messagebox.showerror("Auto-switcher", f"'{new_value}' is not a valid input number.")
+                return
+            self.cfg["overlays"][overlay]["vmix_input"] = number
+            self._save_config()
+            populate()
+            if self._selected_kind == "overlay" and self._selected_overlay == overlay:
+                self._show_overlay(overlay)
+
+        edit_input_cell(tree_states, "#2", commit_state_input)
+        edit_input_cell(tree_overlays, "#3", commit_overlay_input)
 
         populate()
 
         btns = ttk.Frame(dialog)
         btns.pack(pady=(0, 12))
-        ttk.Button(btns, text="Aggiorna", command=populate).pack(side="left", padx=4)
-        ttk.Button(btns, text="Chiudi", command=dialog.destroy).pack(side="left", padx=4)
+        ttk.Button(btns, text="Refresh", command=populate).pack(side="left", padx=4)
+        ttk.Button(btns, text="Close", command=dialog.destroy).pack(side="left", padx=4)
 
     def _open_monitor_picker(self) -> None:
         try:
