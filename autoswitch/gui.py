@@ -22,6 +22,7 @@ from .paths import base_dir as resolve_base_dir
 from .paths import bundle_dir as resolve_bundle_dir
 from .paths import ensure_config
 from .version import version_label
+from .vmix import VmixClient, VmixError
 from .regression import (
     ThresholdSuggestion,
     discover_cases,
@@ -82,6 +83,7 @@ class App(tk.Tk):
         self._refresh_template_list()
         self._refresh_status()
         self.after(150, self._poll_log_queue)
+        self.after(300, self._show_startup_summary)
 
     def _seed_templates(self) -> None:
         """On first launch on a new PC, copies the "factory" screenshots
@@ -508,6 +510,91 @@ class App(tk.Tk):
         ok, detail = wizard.check_vmix(self.config_path)
         self.status_var.set(f"vMix: {'OK' if ok else 'UNREACHABLE'} - {detail}")
         self.monitor_var.set(f"Monitor: {wizard.current_monitor(self.config_path)}")
+
+    # ------------------------------------------------------ startup summary
+
+    def _vmix_input_titles(self) -> dict[int, str]:
+        """Best-effort: input number -> title as vMix sees it right now.
+        Empty if vMix isn't reachable yet (e.g. still starting up)."""
+        vmix_cfg = {k: v for k, v in self.cfg["vmix"].items() if not k.startswith("_")}
+        try:
+            return VmixClient(**vmix_cfg).state().inputs
+        except VmixError:
+            return {}
+
+    def _summary_rows(self) -> tuple[list[tuple[str, str, str]], list[tuple[str, str, str, str]]]:
+        titles = self._vmix_input_titles()
+
+        state_rows = []
+        for name, number in self.cfg["states"].items():
+            if name.startswith("_"):
+                continue
+            state_rows.append((name, str(number), titles.get(int(number), "")))
+
+        overlay_rows = []
+        for name, probe in self.cfg.get("overlays", {}).items():
+            if name.startswith("_"):
+                continue
+            channel = probe.get("channel")
+            vmix_input = probe.get("vmix_input")
+            title = titles.get(int(vmix_input), "") if vmix_input is not None else ""
+            overlay_rows.append((name, str(channel), str(vmix_input), title))
+
+        return state_rows, overlay_rows
+
+    def _show_startup_summary(self) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title("Riepilogo input vMix")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        ttk.Label(
+            dialog,
+            text="Verifica che ogni template e overlay sia associato all'input vMix giusto prima di andare live.",
+            font=FONT, wraplength=560, justify="left",
+        ).pack(anchor="w", padx=12, pady=(12, 8))
+
+        ttk.Label(dialog, text="Stati (card versetto)", font=FONT_BOLD).pack(anchor="w", padx=12)
+        cols = ("template", "input", "titolo vMix")
+        tree_states = ttk.Treeview(dialog, columns=cols, show="headings", selectmode="none", height=7)
+        for c, w in zip(cols, (120, 60, 300)):
+            tree_states.heading(c, text=c.capitalize())
+            tree_states.column(c, width=w, anchor="w")
+        tree_states.pack(fill="x", padx=12, pady=(2, 10))
+
+        ttk.Label(dialog, text="Overlay indipendenti (lis box, lower third, ...)", font=FONT_BOLD).pack(
+            anchor="w", padx=12)
+        cols2 = ("overlay", "canale", "input", "titolo vMix")
+        tree_overlays = ttk.Treeview(dialog, columns=cols2, show="headings", selectmode="none", height=4)
+        for c, w in zip(cols2, (140, 60, 60, 260)):
+            tree_overlays.heading(c, text=c.capitalize())
+            tree_overlays.column(c, width=w, anchor="w")
+        tree_overlays.pack(fill="x", padx=12, pady=(2, 4))
+
+        note_var = tk.StringVar()
+        ttk.Label(dialog, textvariable=note_var, font=FONT, foreground="#a33").pack(
+            anchor="w", padx=12, pady=(0, 8))
+
+        def populate() -> None:
+            state_rows, overlay_rows = self._summary_rows()
+            tree_states.delete(*tree_states.get_children())
+            for tname, number, title in state_rows:
+                tree_states.insert("", "end", values=(tname, number, title or "-"))
+            tree_overlays.delete(*tree_overlays.get_children())
+            for oname, channel, vmix_input, title in overlay_rows:
+                tree_overlays.insert("", "end", values=(oname, channel, vmix_input, title or "-"))
+            if not self._vmix_input_titles():
+                note_var.set("vMix non raggiungibile: impossibile mostrare i titoli reali degli input, "
+                              "solo i numeri configurati. Premi \"Aggiorna\" quando vMix è pronto.")
+            else:
+                note_var.set("")
+
+        populate()
+
+        btns = ttk.Frame(dialog)
+        btns.pack(pady=(0, 12))
+        ttk.Button(btns, text="Aggiorna", command=populate).pack(side="left", padx=4)
+        ttk.Button(btns, text="Chiudi", command=dialog.destroy).pack(side="left", padx=4)
 
     def _open_monitor_picker(self) -> None:
         try:
