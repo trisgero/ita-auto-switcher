@@ -9,6 +9,15 @@ rem into version_info.json - so months later you can tell which .exe someone
 rem is running just by looking at the filename or opening the app.
 cd /d "%~dp0"
 
+if not exist ".venv\Scripts\python.exe" (
+    echo .venv not found - running setup.bat first...
+    call setup.bat
+    if not exist ".venv\Scripts\python.exe" (
+        echo Setup did not finish ^(see messages above^). Re-run build.bat once it has.
+        exit /b 1
+    )
+)
+
 .venv\Scripts\python.exe -m pip show pyinstaller >nul 2>nul
 if errorlevel 1 (
     echo Installing PyInstaller...

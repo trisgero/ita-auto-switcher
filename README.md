@@ -389,6 +389,12 @@ Python to install.
 
 ## Building the executable
 
+On a PC that's never run this project before (no Python installed at all),
+run `.\setup.bat` once first - it installs Python via `winget` if needed,
+then creates `.venv` and installs `requirements.txt` into it. `build.bat`
+also calls it automatically if `.venv` is missing, so just running
+`.\build.bat` on a brand-new machine works too.
+
 ```bash
 .\build.bat
 ```
