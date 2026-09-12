@@ -53,7 +53,13 @@ class OverlayReading:
 
 class OverlayDetector:
     def __init__(self, cfg: dict):
-        self.probes = {k: v for k, v in cfg.items() if not k.startswith("_")}
+        # "enabled": false takes a probe out of the loop entirely - not
+        # measured, not reconciled, not toggled in vMix - without deleting
+        # its calibration (box/thresholds/notes) from config.json, so it can
+        # be turned back on later instead of recalibrated from scratch.
+        self.probes = {
+            k: v for k, v in cfg.items() if not k.startswith("_") and v.get("enabled", True)
+        }
         self._hot: dict[str, bool] = {name: False for name in self.probes}
 
     def _measure(self, probe: dict, hsv: np.ndarray) -> tuple[float, float]:

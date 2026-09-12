@@ -1,4 +1,4 @@
-"""Regression tests for the two independent overlay detectors (lower third,
+"""Regression tests for the independent overlay detectors (lower third,
 sign-language box). Separate from test_detection.py because these are not
 verse-card states - they're independent on/off toggles that can be present
 or absent regardless of what the verse-card detector sees.
@@ -9,6 +9,16 @@ ONLY ONE real "OFF" example exists so far (testdata_overlays/houston_off.png).
 Grow this suite the same way testdata/ grew for the verse-card detector:
 whenever a lower third or LIS box is confirmed on/off in a real frame, save
 it here and add a case below.
+
+centered_lower_third and group_lower_third are DISABLED in config.json
+("enabled": false, 2026-09-12): both kept producing real false positives
+live despite repeated fixes (see their _note in config.json), so they're
+out of the loop entirely for now - only lis_box and lower_third are
+actually measured/reconciled, same as before those two overlays existed.
+OverlayDetector filters disabled probes out at construction time, so they
+simply don't appear in det.probes/r.hot below; test 3 guards that. Their
+calibration images/notes are left in place for whenever there's a real
+reason to re-enable and trust them again.
 """
 
 from __future__ import annotations
@@ -50,74 +60,54 @@ def load(path: str):
 
 det = OverlayDetector(cfg["overlays"])
 
-# (path, expected lis_box, expected lower_third, expected centered_lower_third, expected group_lower_third)
+# (path, expected lis_box hot, expected lower_third hot)
 CASES = [
-    (os.path.join(SHOTS, "full.png"), True, True, False, False),
-    (os.path.join(SHOTS, "left.png"), True, True, False, False),
-    (os.path.join(SHOTS, "big-left.png"), True, True, False, False),
-    (os.path.join(SHOTS, "dual.png"), True, True, False, False),
-    (os.path.join(SHOTS, "triple.png"), True, True, False, False),
-    (os.path.join(TESTDATA, "dual_verso_lungo.png"), True, True, False, False),
-    (os.path.join(TESTDATA, "full_std_bordo.png"), True, True, False, False),
-    (os.path.join(TESTDATA, "left_output_italiano.png"), True, True, False, False),
+    (os.path.join(SHOTS, "full.png"), True, True),
+    (os.path.join(SHOTS, "left.png"), True, True),
+    (os.path.join(SHOTS, "big-left.png"), True, True),
+    (os.path.join(SHOTS, "dual.png"), True, True),
+    (os.path.join(SHOTS, "triple.png"), True, True),
+    (os.path.join(TESTDATA, "dual_verso_lungo.png"), True, True),
+    (os.path.join(TESTDATA, "full_std_bordo.png"), True, True),
+    (os.path.join(TESTDATA, "left_output_italiano.png"), True, True),
     # These two were originally (wrongly) marked lis_box=True without
     # actually checking the image - neither has the interpreter box visible
     # at all, just the verse card + lyrics + lower third. Confirmed visually.
-    (os.path.join(TESTDATA, "left_verso_testo_canzone.png"), False, True, False, False),
-    (os.path.join(TESTDATA, "none_performance_bianco.png"), False, True, False, False),
-    # The white/gold circular logo behind the guest sits in the
-    # centered_lower_third box and is the closest false reading found for it
-    # so far (0.165, vs on=0.20) - see config.json's _note for that probe.
-    (os.path.join(TESTDATA, "none_giacca_navy.png"), True, True, False, False),
-    (os.path.join(TESTDATA_OVERLAYS, "houston_off.png"), False, False, False, False),
+    (os.path.join(TESTDATA, "left_verso_testo_canzone.png"), False, True),
+    (os.path.join(TESTDATA, "none_performance_bianco.png"), False, True),
+    (os.path.join(TESTDATA, "none_giacca_navy.png"), True, True),
+    (os.path.join(TESTDATA_OVERLAYS, "houston_off.png"), False, False),
     # Real false positive from the field: a lower-third banner variant whose
     # saturated blue corner reached into the lis_box ROI and got misread as
     # the interpreter box, even though only the lower third was on screen.
-    (os.path.join(TESTDATA_OVERLAYS, "false_positive_lower_third_only.png"), False, True, False, False),
+    (os.path.join(TESTDATA_OVERLAYS, "false_positive_lower_third_only.png"), False, True),
     # Same song-title segment, ~2.5 minutes apart: a golden sunset background
     # used to read as lower_third=True purely from its hue (see overlays.py's
     # "banner" kind comment) - fixed by dropping the gold-arc component.
-    (os.path.join(TESTDATA_OVERLAYS, "sunset_with_banner.png"), False, True, False, False),
-    # This same sunset background is also the closest false reading found for
-    # group_lower_third (0.22 on hue+saturation alone) - stays False here
-    # because it's not flat (max_std), see config.json's _note for that probe.
-    (os.path.join(TESTDATA_OVERLAYS, "sunset_no_banner.png"), False, False, False, False),
+    (os.path.join(TESTDATA_OVERLAYS, "sunset_with_banner.png"), False, True),
+    (os.path.join(TESTDATA_OVERLAYS, "sunset_no_banner.png"), False, False),
     # Two more false positives from the same evening, both fixed by requiring
     # blue AND white together instead of blue alone: a wide venue shot (stage
     # lighting reads as "saturated blue") and a plain sky background. Both
     # genuinely have the interpreter box visible, hence lis_box=True.
-    (os.path.join(TESTDATA_OVERLAYS, "venue_wide_shot.png"), True, False, False, False),
-    (os.path.join(TESTDATA_OVERLAYS, "sky_no_banner.png"), True, False, False, False),
-    # Real example for the third overlay: a location caption ('VILLAMOR,
-    # PASAY CITY') over the camera panel, vMix input 40. lower_third's own
-    # pixels are ALSO genuinely on in this frame (see test 3 below), but by
-    # production rule the more specific lower third wins - lower_third's
-    # reported state is the one suppressed here (config.json's
-    # "suppressed_by"), not centered_lower_third's.
-    (os.path.join(TESTDATA_OVERLAYS, "centered-lowerthird.png"), False, False, True, False),
+    (os.path.join(TESTDATA_OVERLAYS, "venue_wide_shot.png"), True, False),
+    (os.path.join(TESTDATA_OVERLAYS, "sky_no_banner.png"), True, False),
     # Real false positive: a pale cream/gold song-lyrics caption (a totally
     # different graphic) was bright/desaturated enough to pass as the lower
     # third's "white panel", while a dark bluish shadow nearby passed as its
     # "blue bar" - fixed by tightening the white component's saturation cap
     # (see overlays.py's "banner" kind comment).
-    (os.path.join(TESTDATA_OVERLAYS, "shouldnt-appear-lt.png"), False, False, False, False),
-    # Real ON example for the fourth overlay: an 'ALL CELEBRANTS' group-name
-    # tag, vMix input 54. lower_third's own pixels are ALSO genuinely on in
-    # this exact frame (see test 4 below), but by production rule the more
-    # specific lower third wins - lower_third's reported state is suppressed.
-    (os.path.join(TESTDATA_OVERLAYS, "group-lowerthird.png"), True, False, False, True),
-    # Real false positive reported live: only centered_lower_third ('SAN
-    # JOSÉ, COSTA RICA') should have been showing, but lower_third's own
-    # pixels genuinely read hot too (same clean banner as every confirmed-
-    # true case, not a lookalike) - this is exactly the "more than one lower
-    # third genuinely lit up in vMix at once" scenario suppressed_by exists
-    # for, and it's what proved the priority had to run centered/group over
-    # main, not the reverse (see config.json's lower_third._note history).
-    (os.path.join(TESTDATA_OVERLAYS, "shouldnt-appear-main-lt.png"), False, False, True, False),
+    (os.path.join(TESTDATA_OVERLAYS, "shouldnt-appear-lt.png"), False, False),
+    # centered_lower_third/group_lower_third are disabled, so lower_third's
+    # own pixels (genuinely present in these two frames alongside the now-
+    # disabled overlay) are reported as-is, unsuppressed.
+    (os.path.join(TESTDATA_OVERLAYS, "centered-lowerthird.png"), False, True),
+    (os.path.join(TESTDATA_OVERLAYS, "group-lowerthird.png"), True, True),
+    (os.path.join(TESTDATA_OVERLAYS, "shouldnt-appear-main-lt.png"), False, True),
 ]
 
-print("\n1. all four overlay probes on real frames")
-for path, expect_lis, expect_banner, expect_centered, expect_group in CASES:
+print("\n1. both active overlay probes on real frames")
+for path, expect_lis, expect_banner in CASES:
     img = load(path)
     label = os.path.basename(path)
     if img is None:
@@ -127,8 +117,6 @@ for path, expect_lis, expect_banner, expect_centered, expect_group in CASES:
     r = det.read(img)
     check(f"{label} lis_box", r.hot.get("lis_box"), expect_lis)
     check(f"{label} lower_third", r.hot.get("lower_third"), expect_banner)
-    check(f"{label} centered_lower_third", r.hot.get("centered_lower_third"), expect_centered)
-    check(f"{label} group_lower_third", r.hot.get("group_lower_third"), expect_group)
 
 print("\n2. hysteresis: a probe that's on stays on below 'on' but above 'off'")
 img = load(os.path.join(SHOTS, "full.png"))
@@ -139,28 +127,10 @@ check("lis_box hot after first read", det._hot["lis_box"], True)
 # (this is exactly the mechanism that fixed the DUAL/BIG_LEFT flip-flop bug
 # earlier in this project - verified narrowly here for the new probes too)
 
-print("\n3. suppression: lower_third never reports hot while centered_lower_third does")
-img = load(os.path.join(TESTDATA_OVERLAYS, "centered-lowerthird.png"))
-det.reset()
-r = det.read(img)
-check("lower_third's own signal is genuinely hot underneath",
-      det._hot["lower_third"], True)
-check("but reported hot is suppressed by centered_lower_third", r.hot["lower_third"], False)
-# suppression must apply to the REPORTED state only, not overwrite the
-# probe's own hysteresis tracking - re-reading the same frame keeps the
-# underlying signal hot even though the reported value stays suppressed
-r2 = det.read(img)
-check("underlying signal still hot on a second read of the same frame",
-      det._hot["lower_third"], True)
-check("reported value still suppressed", r2.hot["lower_third"], False)
-
-print("\n4. suppression: lower_third never reports hot while group_lower_third does")
-img = load(os.path.join(TESTDATA_OVERLAYS, "group-lowerthird.png"))
-det.reset()
-r = det.read(img)
-check("lower_third's own signal is genuinely hot underneath",
-      det._hot["lower_third"], True)
-check("but reported hot is suppressed by group_lower_third", r.hot["lower_third"], False)
+print("\n3. disabled overlays are fully out of the loop")
+check("only lis_box and lower_third are active", set(det.probes.keys()), {"lis_box", "lower_third"})
+check("centered_lower_third not in a reading", "centered_lower_third" in r.hot, False)
+check("group_lower_third not in a reading", "group_lower_third" in r.hot, False)
 
 print("\n" + ("ALL OK" if not failures else f"FAILED: {len(failures)} -> {failures}"))
 sys.exit(1 if failures else 0)

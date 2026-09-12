@@ -182,14 +182,15 @@ class App(tk.Tk):
 
         # Only shown for overlays (lis_box, lower_third, ...): which vMix
         # OverlayInput channel toggles them. States don't have a channel.
+        # Columns 3/4, leaving column 2 free for enabled_check in both modes.
         self.channel_label = ttk.Label(form, text="Channel:", font=FONT)
         self.channel_var = tk.StringVar()
         self.channel_entry = ttk.Spinbox(form, from_=1, to=99, textvariable=self.channel_var, width=6,
                                          command=self._on_channel_changed)
         self.channel_entry.bind("<FocusOut>", lambda _e: self._on_channel_changed())
         self.channel_entry.bind("<Return>", lambda _e: self._on_channel_changed())
-        self.channel_label.grid(row=0, column=2, sticky="w")
-        self.channel_entry.grid(row=0, column=3, sticky="w", padx=(6, 0))
+        self.channel_label.grid(row=0, column=3, sticky="w", padx=(16, 0))
+        self.channel_entry.grid(row=0, column=4, sticky="w", padx=(6, 0))
 
         # Only shown for overlays: which OTHER overlays, when on, hide this
         # one - one checkbox per other overlay, reflecting config's
@@ -327,6 +328,7 @@ class App(tk.Tk):
         self.input_var.set(str(self.cfg["states"].get(state, 0)))
         self.channel_label.grid_remove()
         self.channel_entry.grid_remove()
+        self.enabled_check.configure(text="Rule active")
         self.enabled_check.grid()
         self.suppressed_section.pack_forget()
 
@@ -364,7 +366,9 @@ class App(tk.Tk):
 
         self.input_var.set(str(probe.get("vmix_input", 0)))
         self.channel_var.set(str(probe.get("channel", 0)))
-        self.enabled_check.grid_remove()
+        self.enabled_check.configure(text="Enabled", state="normal")
+        self.enabled_var.set(bool(probe.get("enabled", True)))
+        self.enabled_check.grid()
         self.channel_label.grid()
         self.channel_entry.grid()
         self.suppressed_section.pack(anchor="w", fill="x", pady=(6, 0), before=self.after_suppressed_separator)
@@ -510,12 +514,14 @@ class App(tk.Tk):
         self._save_config()
 
     def _on_enabled_changed(self) -> None:
-        if not self._selected_state:
-            return
-        for rule in self.cfg["detector"]["rules"]:
-            if rule.get("state") == self._selected_state:
-                rule["enabled"] = bool(self.enabled_var.get())
-        self._save_config()
+        if self._selected_kind == "state" and self._selected_state:
+            for rule in self.cfg["detector"]["rules"]:
+                if rule.get("state") == self._selected_state:
+                    rule["enabled"] = bool(self.enabled_var.get())
+            self._save_config()
+        elif self._selected_kind == "overlay" and self._selected_overlay:
+            self.cfg["overlays"][self._selected_overlay]["enabled"] = bool(self.enabled_var.get())
+            self._save_config()
 
     # --------------------------------------------------------------- screenshots
 
@@ -680,6 +686,8 @@ class App(tk.Tk):
             channel = probe.get("channel")
             vmix_input = probe.get("vmix_input")
             title = titles.get(int(vmix_input), "") if vmix_input is not None else ""
+            if not probe.get("enabled", True):
+                title = f"{title} [DISABLED]" if title else "[DISABLED]"
             overlay_rows.append((name, str(channel), str(vmix_input), title))
 
         return state_rows, overlay_rows
