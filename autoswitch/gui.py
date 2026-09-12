@@ -191,7 +191,19 @@ class App(tk.Tk):
         self.channel_label.grid(row=0, column=2, sticky="w")
         self.channel_entry.grid(row=0, column=3, sticky="w", padx=(6, 0))
 
-        ttk.Separator(right, orient="horizontal").pack(fill="x", pady=8)
+        # Only shown for overlays: which OTHER overlays, when on, hide this
+        # one - one checkbox per other overlay, reflecting config's
+        # "suppressed_by" list for the selected one. States don't use this.
+        self.suppressed_section = ttk.Frame(right)
+        self.suppressed_section.pack(anchor="w", fill="x", pady=(6, 0))
+        ttk.Label(self.suppressed_section, text="Suppressed by (hidden while these are on):",
+                 font=FONT).pack(anchor="w")
+        self.suppressed_checks_frame = ttk.Frame(self.suppressed_section)
+        self.suppressed_checks_frame.pack(anchor="w", pady=(2, 0))
+        self._suppressed_vars: dict[str, tk.BooleanVar] = {}
+
+        self.after_suppressed_separator = ttk.Separator(right, orient="horizontal")
+        self.after_suppressed_separator.pack(fill="x", pady=8)
 
         ttk.Label(right, text="Primary screenshot (calibration)", font=FONT_BOLD).pack(anchor="w")
         shot_row = ttk.Frame(right)
@@ -316,6 +328,7 @@ class App(tk.Tk):
         self.channel_label.grid_remove()
         self.channel_entry.grid_remove()
         self.enabled_check.grid()
+        self.suppressed_section.pack_forget()
 
         if rule is not None:
             self.enabled_check.configure(state="normal")
@@ -354,6 +367,8 @@ class App(tk.Tk):
         self.enabled_check.grid_remove()
         self.channel_label.grid()
         self.channel_entry.grid()
+        self.suppressed_section.pack(anchor="w", fill="x", pady=(6, 0), before=self.after_suppressed_separator)
+        self._rebuild_suppressed_checks(name)
 
         self.delete_btn.configure(state="disabled")
         for b in self._shot_buttons:
@@ -361,6 +376,36 @@ class App(tk.Tk):
 
         self._set_thumb(None)
         self.verif_list.delete(0, "end")
+
+    def _rebuild_suppressed_checks(self, name: str) -> None:
+        for w in self.suppressed_checks_frame.winfo_children():
+            w.destroy()
+        self._suppressed_vars = {}
+
+        others = [o for o in self._overlays() if o != name]
+        if not others:
+            ttk.Label(self.suppressed_checks_frame, text="(no other overlays)", font=FONT).pack(anchor="w")
+            return
+
+        current = set(self.cfg["overlays"][name].get("suppressed_by", []))
+        for other in others:
+            var = tk.BooleanVar(value=other in current)
+            self._suppressed_vars[other] = var
+            ttk.Checkbutton(self.suppressed_checks_frame, text=other, variable=var,
+                            command=lambda o=other: self._on_suppressed_toggle(o)).pack(anchor="w")
+
+    def _on_suppressed_toggle(self, other: str) -> None:
+        if self._selected_kind != "overlay" or not self._selected_overlay:
+            return
+        probe = self.cfg["overlays"][self._selected_overlay]
+        current = list(probe.get("suppressed_by", []))
+        want_on = self._suppressed_vars[other].get()
+        if want_on and other not in current:
+            current.append(other)
+        elif not want_on and other in current:
+            current.remove(other)
+        probe["suppressed_by"] = current
+        self._save_config()
 
     def _set_thumb(self, path: str | None) -> None:
         if path and os.path.exists(path):
