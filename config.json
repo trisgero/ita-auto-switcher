@@ -35,10 +35,10 @@
       "_comment": "metric 'navy' = fraction of pixels matching the card's color (H 100-130, S>=150, V<=110) - dark AND saturated blue, nothing else. s_min=150 excludes a dark blue jacket in a camera shot (S~106, darker than the card but above a low s_min) that used to trigger false BIG_LEFT/LEFT (testdata/none_giacca_navy.png). A previous version also counted bright/desaturated pixels as 'card' to tolerate long verse text, but that let a performer's white/cream outfit or a white set piece get misread as a verse card (testdata/none_performance_bianco.png) - removed once we confirmed pure navy, with today's thresholds, already covers every known case including long verses (see each ROI's _note below).",
 
       "card_left": {
-        "_note": "is there a card on the left?  full=0.56 left=0.79 big_left=0.80 dual=0.80 triple=0.49 dual_verso_lungo=0.68  |  camera=0.15 navy_jacket=0.29 performance(white_outfit)=0.00",
+        "_note": "is there a card on the left?  full=0.56 left=0.79 big_left=0.80 dual=0.80 triple=0.49 dual_verso_lungo=0.68  |  camera=0.13 (houston_off.png, current worst false with today's pipeline) performance(white_outfit)=0.00. A real FULL frame (testdata_overlays/should-lt-main-v2.jpg, a verse card with a faint decorative background pattern behind the text lowering local saturation) measured only 0.39 - below the old on=0.40, missed entirely (state read NONE instead of FULL). Lowered on/off to 0.30/0.20: still a wide margin over the worst false (0.13), now covers this card style too.",
         "metric": "navy", "box": [0.12, 0.36, 0.40, 0.24],
         "h_min": 100, "h_max": 130, "s_min": 150, "v_max": 110,
-        "on": 0.40, "off": 0.20
+        "on": 0.30, "off": 0.20
       },
       "col_right": {
         "_note": "narrow strip at the card's right edge: where it ends in LEFT and where it continues in BIG_LEFT.  full=0.52 left=0.08 big_left=0.99 dual=1.00 triple=0.85 dual_verso_lungo=0.62  |  camera=0.34 navy_jacket=0.38",
@@ -85,7 +85,7 @@
     "rules": [
       {
         "state": "FULL",
-        "_note": "full-page card: the panel reaches the bottom on both sides AND the main card body is present. card_left is required here too, not just low_left/low_right - a wide congregation/venue shot with blue stage drapery flanking both bottom corners can hit low_left/low_right on its own (card_left=0.0) and get misread as FULL for several seconds, real bug found in the field: testdata/none_venue_wide_nueva_ecija.png (low_left=0.735 low_right=0.944 card_left=0.000). Every real FULL frame has card_left >= 0.49 (see module docstring), so this costs no margin on true cases.",
+        "_note": "full-page card: the panel reaches the bottom on both sides AND the main card body is present. card_left is required here too, not just low_left/low_right - a wide congregation/venue shot with blue stage drapery flanking both bottom corners can hit low_left/low_right on its own (card_left=0.0) and get misread as FULL for several seconds, real bug found in the field: testdata/none_venue_wide_nueva_ecija.png (low_left=0.735 low_right=0.944 card_left=0.000). Real FULL frames measure as low as 0.39 (a card variant with a faint decorative background pattern, testdata_overlays/should-lt-main-v2.jpg - see card_left's own _note), well above the worst false at 0.13, so this still costs no real margin on true cases.",
         "hot": ["low_left", "low_right", "card_left"],
         "cold": []
       },
